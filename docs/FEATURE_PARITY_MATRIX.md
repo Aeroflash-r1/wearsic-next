@@ -94,16 +94,18 @@ This matrix is live-updated as Wearsic Next develops. "Implemented" and
 
 | Feature | Original | Next status | Notes |
 |---|---|---|---|
-| Battery-conscious patterns | Tested (design) | Planned | 2s ticks, deferred recomposition, draw-phase anims |
-| Bounded caches | Tested | Planned | Rust caches bounded |
-| Request dedupe/single-flight | Tested | Planned | Rust |
-| Retry/backoff policies | Tested | Planned | Rust |
-| Diagnostics (crash log, ANR watchdog) | Tested | Planned | Keep Kotlin side |
-| JNI boundary | — | Planned | New |
-| Rust unit tests | — | Planned | New |
-| Kotlin tests incl. Robolectric | Tested | Planned | Keep pattern |
-| Integration tests (no server) | — | Planned | New |
-| Performance benchmarks | None on watch | Planned | Scripts + `docs/PERFORMANCE_BENCHMARKS.md` |
+| Battery-conscious patterns | Tested (design) | Implemented | 2s ticks, deferred recomposition, draw-phase anims |
+| Bounded caches | Tested | Planned | Rust caches bounded (Phase 4+) |
+| Request dedupe/single-flight | Tested | **Implemented** | network crate coalesces duplicate in-flight GETs |
+| Retry/backoff policies | Tested | **Implemented** | bounded, jittered, category-aware (network crate) |
+| Timeouts/limits | Tested | **Implemented** | connect/request/TLS deadlines, 1MiB body cap |
+| Cancellation | Tested | **Implemented** | CancellationToken + JNI cancel-by-id |
+| Network diagnostics | — | **Implemented** | counters/averages JSON, no URL/body retention |
+| Rust unit/integration tests | — | **Implemented** | 7 engine-core + 25 network (11 unit, 14 mock-server integration) |
+| JNI boundary | — | **Implemented** | Phase 2 + network methods; host-JVM probes |
+| Kotlin tests incl. Robolectric | Tested | Implemented | Phase 2 + network JNI smoke tests |
+| Integration tests (no server) | — | Implemented | mock-server tests are test-local only |
+| Performance benchmarks | None on watch | Planned | `docs/PHASE_3_PERFORMANCE_REPORT.md` (Phase 3) |
 
 ---
 

@@ -29,5 +29,22 @@ class EngineProbe {
          */
         @JvmStatic
         external fun probePanicBarrier(): Boolean
+
+        // --- Phase 3 networking probes ---
+
+        @JvmStatic
+        external fun probeNetworkInit(): Boolean
+
+        @JvmStatic
+        external fun probeNetworkExecute(requestJson: String): String
+
+        @JvmStatic
+        external fun probeNetworkCancel(requestId: Long)
+
+        @JvmStatic
+        external fun probeNetworkDiagnostics(): String
+
+        @JvmStatic
+        external fun probeNetworkShutdown()
     }
 }
