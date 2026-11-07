@@ -488,6 +488,112 @@ fn probe_search_cancel_jni(_env: &JNIEnv, _class: JClass, request_id: jlong) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 5 — stream resolution JNI surface
+// ---------------------------------------------------------------------------
+
+static RESOLVER: std::sync::Mutex<Option<stream_resolver::StreamResolver>> =
+    std::sync::Mutex::new(None);
+
+fn stream_resolver() -> Option<stream_resolver::StreamResolver> {
+    let net = network_engine()?;
+    let mut guard = RESOLVER.lock().ok()?;
+    if guard.is_none() {
+        *guard = Some(stream_resolver::StreamResolver::new(net.client.clone()));
+    }
+    guard.clone()
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct ResolveRequestJson {
+    video_id: String,
+    #[serde(default)]
+    request_id: Option<u64>,
+}
+
+fn resolve_execute(request_json: &str) -> String {
+    let Some(resolver) = stream_resolver() else {
+        return serde_json::json!({"ok": false, "error": {
+            "kind": "internal", "status": 0, "message": "network engine not initialised"
+        }}).to_string();
+    };
+
+    let req: ResolveRequestJson = match serde_json::from_str(request_json) {
+        Ok(r) => r,
+        Err(e) => {
+            return serde_json::json!({"ok": false, "error": {
+                "kind": "invalid_track", "status": 0, "message": format!("bad request JSON: {e}")
+            }}).to_string();
+        }
+    };
+
+    let token = CancellationToken::new();
+    let request_id = req.request_id.unwrap_or(0);
+    if request_id != 0 {
+        if let Ok(mut g) = IN_FLIGHT.lock() {
+            g.insert(request_id, token.clone());
+        }
+    }
+
+    let engine = network_engine().unwrap();
+    let resolver_task = resolver.clone();
+    let token_task = token.clone();
+    let video_id = req.video_id.clone();
+    let task = engine.spawn(async move {
+        resolver_task.resolve(&video_id, &token_task).await
+    });
+
+    let result = engine.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(60), task).await
+    });
+
+    if request_id != 0 {
+        let _ = IN_FLIGHT.lock().map(|mut g| g.remove(&request_id));
+    }
+
+    match result {
+        Ok(Ok(Ok(desc))) => serde_json::json!({
+            "ok": true,
+            "stream": desc,
+        })
+        .to_string(),
+        Ok(Ok(Err(err))) => serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": serde_json::to_value(err.kind).unwrap_or_else(|_| "internal".into()),
+                "status": 0,
+                "message": err.message,
+            },
+        })
+        .to_string(),
+        Ok(Err(_)) => serde_json::json!({
+            "ok": false,
+            "error": { "kind": "internal", "status": 0, "message": "resolution task panicked" },
+        })
+        .to_string(),
+        Err(_) => serde_json::json!({
+            "ok": false,
+            "error": { "kind": "timeout", "status": 0, "message": "resolution timed out" },
+        })
+        .to_string(),
+    }
+}
+
+fn resolve_jni(mut env: JNIEnv, _class: JClass, request_json: JString) -> jstring {
+    panic_barrier(std::ptr::null_mut(), || {
+        let body: String = env
+            .get_string(&request_json)
+            .map(|s| s.into())
+            .unwrap_or_default();
+        jstring_from(&env, &resolve_execute(&body))
+    })
+}
+
+fn probe_resolve_jni(mut env: JNIEnv, _class: JClass, request_json: JString) -> jstring {
+    resolve_jni(env, _class, request_json)
+}
+
+// ---------------------------------------------------------------------------
 // JNI_OnLoad — registers the native method tables
 // ---------------------------------------------------------------------------
 
@@ -546,6 +652,11 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut std::ffi::c_void) 
             "(J)V",
             search_cancel_jni as *mut std::ffi::c_void,
         ),
+        m(
+            "nativeResolveStream",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            resolve_jni as *mut std::ffi::c_void,
+        ),
     ];
 
     let engine_probe_methods = [
@@ -592,6 +703,11 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut std::ffi::c_void) 
             "probeSearchCancel",
             "(J)V",
             probe_search_cancel_jni as *mut std::ffi::c_void,
+        ),
+        m(
+            "probeResolveStream",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            probe_resolve_jni as *mut std::ffi::c_void,
         ),
     ];
 

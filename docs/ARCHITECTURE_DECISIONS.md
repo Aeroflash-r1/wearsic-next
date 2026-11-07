@@ -142,3 +142,18 @@ rows client-side is more battery-efficient (one radio round-trip serves all
 filters) and matches the current web app behavior. The original "primary =
 InnerTube" priority is preserved; the removed params are documented in
 `INNERTUBE_IMPLEMENTATION.md`.
+
+---
+
+## AD-011: IOS client first for stream resolution (Accepted)
+
+**Decision:** The stream resolver tries the InnerTube `IOS` player client
+first, then `ANDROID_VR`. The original server's `VISIONOS`-primary order is
+changed.
+
+**Rationale (verified live 2026-11-07):** `VISIONOS` answers
+`LOGIN_REQUIRED` without a session visitor id; `IOS` answers `OK`
+cookie-less with an identical request shape and yields playable AAC/Opus
+formats. InnerTube-primary behavior is preserved (no NewPipe in the Rust
+engine); only the client identity order changes, and it is documented in
+`PHASE_5_STREAM_ARCHITECTURE.md`.

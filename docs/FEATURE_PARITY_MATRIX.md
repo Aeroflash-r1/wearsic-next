@@ -21,7 +21,7 @@ This matrix is live-updated as Wearsic Next develops. "Implemented" and
 | Volume dial + crown steps | Tested | Planned | Via `SystemVolumeState` |
 | Sleep timer + volume fade | Tested | Planned | Keep |
 | Auto-cache after 45s listening | Tested | Planned | Keep |
-| Direct stream playback (no proxy) | — | Implemented target | **Rust resolves URL; Media3 plays it directly** |
+| Direct stream playback (no proxy) | — | **Implemented (resolution)** | Rust resolves validated URL; Media3 playback = Phase 6 |
 | Local-file playback (downloads) | Tested | Planned | Keep |
 
 ## B. Search & discovery

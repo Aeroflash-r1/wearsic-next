@@ -73,6 +73,23 @@ impl InnerTubeClient {
             .map_err(|e| InnerTubeError::InvalidResponse(format!("parse: {e}")))
     }
 
+    /// POSTs a raw request (for player requests that need custom headers)
+    /// and returns the parsed JSON.
+    pub async fn post_raw(
+        &self,
+        request: &Request,
+        token: &CancellationToken,
+    ) -> Result<serde_json::Value, InnerTubeError> {
+        let response = self
+            .http
+            .execute(request.clone(), token)
+            .await
+            .map_err(InnerTubeError::from)?;
+        let text = response.text().map_err(|e| InnerTubeError::Network(e))?;
+        serde_json::from_str(&text)
+            .map_err(|e| InnerTubeError::InvalidResponse(format!("parse: {e}")))
+    }
+
     /// Search with an optional filter param.
     pub async fn search(
         &self,

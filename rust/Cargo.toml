@@ -5,6 +5,7 @@ members = [
     "crates/network",
     "crates/innertube",
     "crates/ytmusic",
+    "crates/stream-resolver",
     "crates/jni-bridge",
 ]
 

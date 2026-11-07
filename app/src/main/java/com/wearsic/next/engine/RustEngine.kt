@@ -75,6 +75,12 @@ class RustEngine private constructor() {
         @JvmStatic
         external fun nativeSearchCancel(requestId: Long)
 
+        // --- Phase 5 stream resolution natives ---
+
+        /** Resolves a playable audio stream; returns JSON envelope. */
+        @JvmStatic
+        external fun nativeResolveStream(requestJson: String): String
+
         /**
          * Loads + initializes the engine. Throws [EngineException] if the
          * native library is missing or initialization fails.
@@ -106,7 +112,7 @@ class RustEngine private constructor() {
         val envelope = json.decodeFromString(NetworkEnvelope.serializer(), raw)
         if (!envelope.ok) {
             val err = envelope.error
-                ?: NetworkError("internal", 0, "empty error envelope")
+                ?: NetworkErrorPublic("internal", 0, "empty error envelope")
             throw NetworkEngineException(err)
         }
         return NetworkResponse(
@@ -151,6 +157,31 @@ class RustEngine private constructor() {
     }
 
     fun searchCancel(requestId: Long) = nativeSearchCancel(requestId)
+
+    // --- Phase 5: stream resolution ---
+
+    /**
+     * Resolves a playable audio stream for a track video id (blocking on
+     * the calling worker thread). Returns the envelope; on failure, throws
+     * [NetworkEngineException] with a structured error.
+     */
+    fun resolveStream(videoId: String, requestId: Long = 0L): StreamDescriptor {
+        val raw = nativeResolveStream(
+            json.encodeToString(
+                ResolveRequest.serializer(),
+                ResolveRequest(videoId = videoId, requestId = requestId.takeIf { it != 0L }),
+            ),
+        )
+        val envelope = runCatching {
+            json.decodeFromString(ResolveEnvelope.serializer(), raw)
+        }.getOrElse {
+            ResolveEnvelope(ok = false, error = NetworkErrorPublic("invalid_response", 0, "bad envelope"))
+        }
+        if (!envelope.ok || envelope.stream == null) {
+            throw NetworkEngineException(envelope.error ?: NetworkErrorPublic("internal", 0, "resolve failed"))
+        }
+        return envelope.stream
+    }
 }
 
 @kotlinx.serialization.Serializable
@@ -164,7 +195,7 @@ data class SearchRequest(
 class EngineException(message: String) : Exception(message)
 
 /** Raised when a native network request fails (including cancellation). */
-class NetworkEngineException(val error: NetworkError) : Exception(error.message)
+class NetworkEngineException(val error: NetworkErrorPublic) : Exception(error.message)
 
 @Serializable
 data class NetworkRequest(
@@ -185,17 +216,10 @@ data class NetworkResponse(
 )
 
 @Serializable
-data class NetworkError(
-    val kind: String,
-    val status: Int,
-    val message: String,
-)
-
-@Serializable
 private data class NetworkEnvelope(
     val ok: Boolean,
     val status: Int? = null,
     val headers: Map<String, String>? = null,
     val body: String? = null,
-    val error: NetworkError? = null,
+    val error: NetworkErrorPublic? = null,
 )
