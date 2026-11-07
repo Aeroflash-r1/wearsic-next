@@ -1,0 +1,116 @@
+# Feature Parity Matrix — Wearsic → Wearsic Next
+
+Legend: **Not started** · **Planned** · **Implemented** · **Tested** · **Needs improvement**
+
+This matrix is live-updated as Wearsic Next develops. "Implemented" and
+"Tested" are only claimed when code exists and tests have actually run.
+
+## A. Playback & media
+
+| Feature | Original | Next status | Notes |
+|---|---|---|---|
+| Media3 ExoPlayer playback | Tested | Planned | Same Media3 1.5.x stack |
+| Media session + notification | Tested | Planned | MediaSessionService pattern |
+| Audio focus / becoming-noisy | Tested | Planned | Media3-managed |
+| Wake mode network | Tested | Planned | `WAKE_MODE_NETWORK` |
+| Load control (15s/90s, 3MB) | Tested | Planned | Reuse values |
+| Ring progress around disc | Tested | Planned | Keep (UI) |
+| Drag-to-scrub on disc | Tested | Planned | Keep (UI) |
+| Queue + reorder + shuffle/repeat | Tested | Planned | Keep |
+| Crossfade engine | Tested | Planned | Keep (optional) |
+| Volume dial + crown steps | Tested | Planned | Via `SystemVolumeState` |
+| Sleep timer + volume fade | Tested | Planned | Keep |
+| Auto-cache after 45s listening | Tested | Planned | Keep |
+| Direct stream playback (no proxy) | — | Implemented target | **Rust resolves URL; Media3 plays it directly** |
+| Local-file playback (downloads) | Tested | Planned | Keep |
+
+## B. Search & discovery
+
+| Feature | Original | Next status | Notes |
+|---|---|---|---|
+| InnerTube YTM search (primary) | Tested | Planned | Port to Rust |
+| NewPipe search fallback | Tested | Planned (uncertain) | JVM lib may run in-app; else graceful path |
+| Suggestions | Tested | Planned | Port to Rust |
+| Related/radio | Tested | Planned | Port to Rust |
+| Recommendations ("Made for you") | Tested | Planned | Port to Rust |
+| Albums/Artists browsing | Tested | Planned | Rust search + local grouping |
+| Search history | Tested | Planned | Room |
+| Empty/error/retry search states | Tested | Planned | Keep |
+
+## C. Lyrics
+
+| Feature | Original | Next status | Notes |
+|---|---|---|---|
+| LRCLIB fetch | Tested | Planned | Port to Rust |
+| LRC parsing | Tested | Planned | Port to Rust (client-side now) |
+| Synced highlighting | Tested | Planned | Keep (Kotlin UI) |
+| Plain fallback | Tested | Planned | Keep |
+| Offline lyrics cache (Room) | Tested | Planned | Keep |
+| Lyrics download modes | Tested | Planned | Keep |
+
+## D. Library & offline
+
+| Feature | Original | Next status | Notes |
+|---|---|---|---|
+| Favorites (local-first + backup) | Tested | Planned | Keep Room model |
+| Playlists (create/list/detail/remove) | Tested | Planned | Local — no server needed |
+| Albums page | Tested | Planned | Rust-backed |
+| Artists (local grouping) | Tested | Planned | Keep |
+| Recently played (identity-safe) | Tested | Planned | Keep |
+| Downloads with ownership (AUTO/MANUAL) | Tested | Planned | Keep |
+| Offline playback of downloads | Tested | Planned | Keep |
+| Storage breakdown UI | Tested | Planned | Keep |
+| Pairing file import | Tested | Obsolete | No server to pair with; remove |
+
+## E. Server/connectivity features
+
+| Feature | Original | Next status | Notes |
+|---|---|---|---|
+| External Ktor server | Tested | **Eliminated** | Targeted by Rust engine |
+| Termux/phone hosting | Tested | **Eliminated** | — |
+| Tailscale/Cloudflare tunnel | Tested | **Eliminated** | — |
+| Server profiles + failover | Tested | **Eliminated** | No server to fail over |
+| API key auth | Tested | **Eliminated** | No manual config |
+| Status dashboard (`/health`) | Tested | Replaced | Engine diagnostics screen |
+| Self-heal/canary | Tested | Replaced | Rust diagnostics |
+
+## F. UI & platform
+
+| Feature | Original | Next status | Notes |
+|---|---|---|---|
+| Library-home shell | Tested | Planned | Next will adopt 4-tab hub (Home/Library/Search/Mix) |
+| Now Playing (2-page pager) | Tested | Planned | Keep |
+| Fullscreen synced lyrics | Tested | Planned | Keep |
+| Round-safe layouts | Tested | Planned | Keep; `watchScaled`/padding |
+| Rotary scroll + haptics | Tested | Planned | Keep framework-delegated |
+| Persistent mini-player | Scrapped (1.9.49) | Planned | Reintroduce from prototype |
+| Voice search / tri-mode search | Scrapped (1.9.49) | Planned | Reintroduce |
+| Artist collage avatars | Scrapped (1.9.49) | Planned | Reintroduce |
+| Dynamic accent from artwork | Tested | Planned | Keep |
+| Settings screens | Tested | Planned | Adapt (no server fields) |
+| Wear tile | Tested | Planned | Keep |
+
+## G. Engineering/performance
+
+| Feature | Original | Next status | Notes |
+|---|---|---|---|
+| Battery-conscious patterns | Tested (design) | Planned | 2s ticks, deferred recomposition, draw-phase anims |
+| Bounded caches | Tested | Planned | Rust caches bounded |
+| Request dedupe/single-flight | Tested | Planned | Rust |
+| Retry/backoff policies | Tested | Planned | Rust |
+| Diagnostics (crash log, ANR watchdog) | Tested | Planned | Keep Kotlin side |
+| JNI boundary | — | Planned | New |
+| Rust unit tests | — | Planned | New |
+| Kotlin tests incl. Robolectric | Tested | Planned | Keep pattern |
+| Integration tests (no server) | — | Planned | New |
+| Performance benchmarks | None on watch | Planned | Scripts + `docs/PERFORMANCE_BENCHMARKS.md` |
+
+---
+
+## Explicitly NOT carried over
+
+- Ktor server / CIO engine / JDBC / `java.net.http` / ffmpeg transcode /
+  TLS cipher-suite reorder / env-var config — all replaced or eliminated for
+  Wear OS feasibility (see audit §13).
+- NewPipe as a required dependency — only as an optional in-app fallback
+  adapter if it runs on Android; otherwise documented graceful degradation.
