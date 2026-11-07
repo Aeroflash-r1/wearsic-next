@@ -47,6 +47,7 @@ import com.wearsic.next.engine.Thumbnail
 @Composable
 fun SearchScreen(
     onResultSelected: (MusicSearchResult) -> Unit,
+    onBack: () -> Unit = {},
     viewModel: SearchViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()

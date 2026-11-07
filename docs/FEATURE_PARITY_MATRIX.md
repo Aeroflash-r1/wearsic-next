@@ -9,8 +9,8 @@ This matrix is live-updated as Wearsic Next develops. "Implemented" and
 
 | Feature | Original | Next status | Notes |
 |---|---|---|---|
-| Media3 ExoPlayer playback | Tested | Planned | Same Media3 1.5.x stack |
-| Media session + notification | Tested | Planned | MediaSessionService pattern |
+| Media3 ExoPlayer playback | Tested | **Implemented (wired; device-untested)** | Service+controller+UI compile; JVM tests pass |
+| Media session + notification | Tested | **Implemented (wired; device-untested)** | MediaSessionService + manifest |
 | Audio focus / becoming-noisy | Tested | Planned | Media3-managed |
 | Wake mode network | Tested | Planned | `WAKE_MODE_NETWORK` |
 | Load control (15s/90s, 3MB) | Tested | Planned | Reuse values |
@@ -21,7 +21,7 @@ This matrix is live-updated as Wearsic Next develops. "Implemented" and
 | Volume dial + crown steps | Tested | Planned | Via `SystemVolumeState` |
 | Sleep timer + volume fade | Tested | Planned | Keep |
 | Auto-cache after 45s listening | Tested | Planned | Keep |
-| Direct stream playback (no proxy) | — | **Implemented (resolution)** | Rust resolves validated URL; Media3 playback = Phase 6 |
+| Playback | Direct stream playback (no proxy) | — | **Implemented (resolution + Media3 wiring)** | Rust resolves validated URL; Media3 plays it (device playback untested) |
 | Local-file playback (downloads) | Tested | Planned | Keep |
 
 ## B. Search & discovery

@@ -62,8 +62,11 @@ metadata/streams/lyrics; it never relays audio and never runs an HTTP server.
   `watchScaled` sizing, rotary input via framework `rotaryScrollable`.
 - **Screens:** 4-tab hub (Home / Library / Search / Mix), Now Playing
   (2-page pager + fullscreen lyrics), Settings, Queue, Downloads, Details.
-- **Playback:** Media3 ExoPlayer + `MediaSessionService`, load control,
-  wake mode, audio focus — patterns ported from the original (audit §15).
+- **Playback:** Android Media3 — `WearsicPlaybackService` (MediaSessionService)
+  owns one ExoPlayer + MediaSession; `PlaybackController` bridges Rust stream
+  descriptors → MediaItems, queue, controls, refresh-once error recovery;
+  `NowPlayingScreen` (original-Wearsic-style UI) drives it. No audio crosses
+  JNI.
 - **Persistence:** Room (recents, favorites, downloads, lyrics, playlists)
   + DataStore preferences.
 - **Artwork:** Coil with bounded caches and artwork palette extraction.

@@ -157,3 +157,27 @@ cookie-less with an identical request shape and yields playable AAC/Opus
 formats. InnerTube-primary behavior is preserved (no NewPipe in the Rust
 engine); only the client identity order changes, and it is documented in
 `PHASE_5_STREAM_ARCHITECTURE.md`.
+
+---
+
+## AD-012: Media3 owns playback; Rust owns resolution (Accepted)
+
+**Decision:** Audio playback is exclusively Android Media3 (ExoPlayer +
+MediaSession). Rust resolves/validates stream URLs; no audio ever crosses
+JNI; no Rust decoder; Media3's own data source streams from the resolved
+URL.
+
+**Rationale:** The division matches platform strengths, avoids a second
+network/decoding stack on-device, and keeps battery behavior under Android's
+media lifecycle management. Documented in `PHASE_6_PLAYBACK_ARCHITECTURE.md`.
+
+---
+
+## AD-013: Watch-tuned buffering (Accepted)
+
+**Decision:** ExoPlayer buffers: min 15 s / max 60 s, playback buffer 1.2 s,
+rebuffer 3 s, 4 MiB cap, time-over-size priority.
+
+**Rationale:** Desktop defaults assume large RAM/fast networks; the watch
+needs bounded memory (4 MiB cap) while still hiding small network jitter
+(15 s min). Sizes are conservative and documented in `MEDIA3_INTEGRATION.md`.
