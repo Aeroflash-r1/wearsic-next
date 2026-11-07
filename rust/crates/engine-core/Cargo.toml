@@ -1,0 +1,8 @@
+[package]
+name = "engine-core"
+version = "0.2.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Wearsic Next engine core: lifecycle, version, status."
+
+[dependencies]

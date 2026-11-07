@@ -1,0 +1,14 @@
+[package]
+name = "jni-bridge"
+version = "0.2.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "JNI bridge: exposes the Wearsic Next engine to Kotlin."
+
+[lib]
+name = "wearsic_engine"
+crate-type = ["cdylib"]
+
+[dependencies]
+engine-core = { path = "../engine-core" }
+jni = "0.21.1"

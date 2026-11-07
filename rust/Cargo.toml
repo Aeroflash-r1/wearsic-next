@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/engine-core",
+    "crates/jni-bridge",
+]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = true
+
+[profile.dev]
+opt-level = 1
