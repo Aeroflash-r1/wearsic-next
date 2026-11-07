@@ -46,5 +46,13 @@ class EngineProbe {
 
         @JvmStatic
         external fun probeNetworkShutdown()
+
+        // --- Phase 4 search probes ---
+
+        @JvmStatic
+        external fun probeSearchMusic(requestJson: String): String
+
+        @JvmStatic
+        external fun probeSearchCancel(requestId: Long)
     }
 }

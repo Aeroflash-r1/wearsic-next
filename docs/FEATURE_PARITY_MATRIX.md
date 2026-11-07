@@ -28,14 +28,16 @@ This matrix is live-updated as Wearsic Next develops. "Implemented" and
 
 | Feature | Original | Next status | Notes |
 |---|---|---|---|
-| InnerTube YTM search (primary) | Tested | Planned | Port to Rust |
-| NewPipe search fallback | Tested | Planned (uncertain) | JVM lib may run in-app; else graceful path |
-| Suggestions | Tested | Planned | Port to Rust |
-| Related/radio | Tested | Planned | Port to Rust |
-| Recommendations ("Made for you") | Tested | Planned | Port to Rust |
-| Albums/Artists browsing | Tested | Planned | Rust search + local grouping |
-| Search history | Tested | Planned | Room |
-| Empty/error/retry search states | Tested | Planned | Keep |
+| InnerTube YTM search (primary) | Tested | **Implemented + live-tested** | `innertube` + `ytmusic` crates |
+| NewPipe search fallback | Tested | Not ported (documented) | Rust engine uses InnerTube only; NewPipe remains a possible Kotlin adapter (Phase 5) |
+| Suggestions | Tested | Planned | Next phase |
+| Related/radio | Tested | Planned | Next phase |
+| Recommendations ("Made for you") | Tested | Planned | Next phase |
+| Albums/Artists browsing | Tested | **Implemented** | typed results; client-side filter views |
+| Search history | Tested | Planned | Room (next phases) |
+| Empty/error/retry search states | Tested | **Implemented** | SearchScreen states |
+| Pagination (continuation) | Tested | **Implemented** | bounded, per-page |
+| Search cache | Tested | **Implemented** | 64-entry / 5min TTL in-memory |
 
 ## C. Lyrics
 

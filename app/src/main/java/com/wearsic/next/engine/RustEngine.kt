@@ -65,6 +65,16 @@ class RustEngine private constructor() {
         @JvmStatic
         external fun nativeNetworkShutdown()
 
+        // --- Phase 4 music search natives ---
+
+        /** Executes a search/continuation; returns JSON envelope. */
+        @JvmStatic
+        external fun nativeSearchMusic(requestJson: String): String
+
+        /** Cancels an in-flight search by request id. */
+        @JvmStatic
+        external fun nativeSearchCancel(requestId: Long)
+
         /**
          * Loads + initializes the engine. Throws [EngineException] if the
          * native library is missing or initialization fails.
@@ -111,7 +121,44 @@ class RustEngine private constructor() {
     fun networkDiagnostics(): String = nativeNetworkDiagnostics()
 
     fun networkShutdown() = nativeNetworkShutdown()
+
+    // --- Phase 4: music search ---
+
+    /**
+     * Searches for music (blocking on the calling worker thread). Returns
+     * the first page of typed results.
+     *
+     * @param query search text
+     * @param continuation optional continuation token for pagination
+     * @param requestId used for cancellation (0 = no cancellation tracking)
+     */
+    fun searchMusic(
+        query: String,
+        continuation: String? = null,
+        requestId: Long = 0L,
+    ): SearchEnvelope {
+        val request = SearchRequest(
+            query = query,
+            continuation = continuation,
+            requestId = if (requestId != 0L) requestId else null,
+        )
+        val raw = nativeSearchMusic(json.encodeToString(SearchRequest.serializer(), request))
+        return runCatching {
+            json.decodeFromString(SearchEnvelope.serializer(), raw)
+        }.getOrElse {
+            SearchEnvelope(ok = false, error = NetworkErrorPublic("invalid_response", 0, "bad envelope"))
+        }
+    }
+
+    fun searchCancel(requestId: Long) = nativeSearchCancel(requestId)
 }
+
+@kotlinx.serialization.Serializable
+data class SearchRequest(
+    val query: String,
+    val continuation: String? = null,
+    @SerialName("request_id") val requestId: Long? = null,
+)
 
 /** Structured error surfaced when the native engine cannot start. */
 class EngineException(message: String) : Exception(message)

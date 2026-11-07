@@ -359,6 +359,135 @@ fn probe_network_execute(mut env: JNIEnv, _class: JClass, request_json: JString)
 }
 
 // ---------------------------------------------------------------------------
+// Phase 4 — music discovery (search) JNI surface
+// ---------------------------------------------------------------------------
+
+/// Global YTM service, started lazily with the network engine.
+static YTM: std::sync::Mutex<Option<ytmusic::YtMusicService>> = std::sync::Mutex::new(None);
+
+fn ytm_service() -> Option<ytmusic::YtMusicService> {
+    let net = network_engine()?;
+    let mut guard = YTM.lock().ok()?;
+    if guard.is_none() {
+        *guard = Some(ytmusic::YtMusicService::new(net.client.clone()));
+    }
+    guard.clone()
+}
+
+/// Search request envelope from Kotlin.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct SearchRequestJson {
+    query: String,
+    #[serde(default)]
+    filter: Option<String>,
+    #[serde(default)]
+    continuation: Option<String>,
+    #[serde(default)]
+    request_id: Option<u64>,
+}
+
+fn search_execute(request_json: &str) -> String {
+    let Some(service) = ytm_service() else {
+        return serde_json::json!({"ok": false, "error": {
+            "kind": "internal", "status": 0, "message": "network engine not initialised"
+        }}).to_string();
+    };
+
+    let req: SearchRequestJson = match serde_json::from_str(request_json) {
+        Ok(r) => r,
+        Err(e) => {
+            return serde_json::json!({"ok": false, "error": {
+                "kind": "invalid_response", "status": 0, "message": format!("bad request JSON: {e}")
+            }}).to_string();
+        }
+    };
+
+    let token = CancellationToken::new();
+    let request_id = req.request_id.unwrap_or(0);
+    if request_id != 0 {
+        if let Ok(mut g) = IN_FLIGHT.lock() {
+            g.insert(request_id, token.clone());
+        }
+    }
+
+    let engine = network_engine().unwrap();
+    let service_task = service.clone();
+    let token_task = token.clone();
+    let task = engine.spawn(async move {
+        if let Some(cont) = req.continuation.clone() {
+            service_task.load_more(&cont, ytmusic::SearchFilter::Songs, &token_task).await
+        } else {
+            service_task.search(&req.query, ytmusic::SearchFilter::Songs, &token_task).await
+        }
+    });
+
+    let result = engine.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(60), task).await
+    });
+
+    if request_id != 0 {
+        let _ = IN_FLIGHT.lock().map(|mut g| g.remove(&request_id));
+    }
+
+    let outcome = match result {
+        Err(_) => Err(network::NetworkError::new(
+            network::NetworkErrorKind::Timeout,
+            "search timed out",
+        )),
+        Ok(join) => match join {
+            Err(_) => Err(network::NetworkError::new(
+                network::NetworkErrorKind::Internal,
+                "search task panicked",
+            )),
+            Ok(inner) => inner.map_err(|e| {
+                network::NetworkError::new(network::NetworkErrorKind::Internal, e)
+            }),
+        },
+    };
+
+    match outcome {
+        Ok(page) => serde_json::json!({
+            "ok": true,
+            "results": page.results,
+            "continuation": page.continuation,
+        })
+        .to_string(),
+        Err(err) => serde_json::json!({
+            "ok": false,
+            "error": {
+                "kind": serde_json::to_value(err.kind).unwrap_or_else(|_| "internal".into()),
+                "status": err.status,
+                "message": err.message,
+            },
+        })
+        .to_string(),
+    }
+}
+
+fn search_jni(mut env: JNIEnv, _class: JClass, request_json: JString) -> jstring {
+    panic_barrier(std::ptr::null_mut(), || {
+        let body: String = env
+            .get_string(&request_json)
+            .map(|s| s.into())
+            .unwrap_or_default();
+        jstring_from(&env, &search_execute(&body))
+    })
+}
+
+fn probe_search_jni(mut env: JNIEnv, _class: JClass, request_json: JString) -> jstring {
+    search_jni(env, _class, request_json)
+}
+
+fn search_cancel_jni(_env: &JNIEnv, _class: JClass, request_id: jlong) {
+    panic_barrier((), || network_cancel(request_id as u64));
+}
+
+fn probe_search_cancel_jni(_env: &JNIEnv, _class: JClass, request_id: jlong) {
+    panic_barrier((), || network_cancel(request_id as u64));
+}
+
+// ---------------------------------------------------------------------------
 // JNI_OnLoad — registers the native method tables
 // ---------------------------------------------------------------------------
 
@@ -407,6 +536,16 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut std::ffi::c_void) 
             network_diagnostics_jni as *mut std::ffi::c_void,
         ),
         m("nativeNetworkShutdown", "()V", network_shutdown_jni as *mut std::ffi::c_void),
+        m(
+            "nativeSearchMusic",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            search_jni as *mut std::ffi::c_void,
+        ),
+        m(
+            "nativeSearchCancel",
+            "(J)V",
+            search_cancel_jni as *mut std::ffi::c_void,
+        ),
     ];
 
     let engine_probe_methods = [
@@ -444,6 +583,16 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut std::ffi::c_void) 
             probe_network_diagnostics as *mut std::ffi::c_void,
         ),
         m("probeNetworkShutdown", "()V", probe_network_shutdown as *mut std::ffi::c_void),
+        m(
+            "probeSearchMusic",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            probe_search_jni as *mut std::ffi::c_void,
+        ),
+        m(
+            "probeSearchCancel",
+            "(J)V",
+            probe_search_cancel_jni as *mut std::ffi::c_void,
+        ),
     ];
 
     let ok_engine = env

@@ -81,15 +81,9 @@ rust/
 ├── crates/
 │   ├── engine-core/        lifecycle, coordination, cancellation, errors
 │   ├── network/            HTTP client: pooling, TLS, retries, limits
-│   ├── innertube/          InnerTube player/next/search requests
-│   ├── ytmusic/            YouTube Music search (WEB_REMIX)
-│   ├── metadata/           result parsing, DTOs, orchestration
-│   ├── stream-resolver/    primary resolution + fallback coordination
-│   ├── extraction/         fallback (NewPipe-compatible logic where viable)
-│   ├── lyrics/             LRCLIB + LRC parser
-│   ├── cache/              bounded LRU/TTL caches
-│   ├── storage/            durable cache (SQLite/Room integration later)
-│   └── diagnostics/        counters, health, events
+│   ├── innertube/          InnerTube request construction + response helpers
+│   ├── ytmusic/            search service, domain models, mapper, cache
+│   └── jni-bridge/         JNI exports, marshalling, panic barriers
 └── android/
     └── jni-bridge/         JNI exports, marshalling, panic barriers
 ```

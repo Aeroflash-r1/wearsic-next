@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/engine-core",
     "crates/network",
+    "crates/innertube",
+    "crates/ytmusic",
     "crates/jni-bridge",
 ]
 

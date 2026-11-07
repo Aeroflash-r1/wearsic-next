@@ -126,3 +126,19 @@ all gated by measured necessity.
 **Rationale:** Explicit requirement of the brief; audit shows the original
 app already models many good practices (2s position ticks, derived state,
 draw-phase animations, hysteresis) — these are carried forward.
+
+---
+
+## AD-010: Search filters are client-side views (Accepted)
+
+**Decision:** InnerTube search `params` are not used; the service fetches
+the mixed result set once and filters are applied client-side over typed
+results.
+
+**Rationale (verified live 2026-11-07):** the current service returns the
+same mixed set for every filter param (Songs/Videos/Albums/Artists/Playlists
+all returned watch≈20 + artist≈3 + other≈6). Sending one request and typing
+rows client-side is more battery-efficient (one radio round-trip serves all
+filters) and matches the current web app behavior. The original "primary =
+InnerTube" priority is preserved; the removed params are documented in
+`INNERTUBE_IMPLEMENTATION.md`.
