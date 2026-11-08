@@ -55,12 +55,12 @@ import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.wearsic.next.engine.MusicSearchResult
 import com.wearsic.next.engine.Thumbnail
 import com.wearsic.next.ui.components.WearsicScreenHeader
 import com.wearsic.next.ui.components.WearsicSearchShimmerRow
+import com.wearsic.next.ui.components.WearsicSongRow
+import com.wearsic.next.ui.components.WearsicSongRowActionButton
 import com.wearsic.next.ui.data.FavoritesStore
 import com.wearsic.next.playback.PlaybackViewModel
 import com.wearsic.next.ui.theme.LocalWearsicAccent
@@ -71,6 +71,7 @@ import com.wearsic.next.ui.theme.WearsicGlassFill
 import com.wearsic.next.ui.theme.WearsicSurfaceActive
 import com.wearsic.next.ui.theme.WearsicSurfaceBorderSubtle
 import com.wearsic.next.ui.theme.WearsicTextMuted
+import com.wearsic.next.ui.theme.WearsicTextPrimary
 import com.wearsic.next.ui.theme.wearsicListContentPadding
 import com.wearsic.next.ui.util.wearsicClickable
 import com.wearsic.next.ui.util.wearsicEntrance
@@ -307,82 +308,26 @@ private fun SearchResultRow(
     val isTrack = result is MusicSearchResult.Track
     val title = result.title()
     val subtitle = result.subtitle()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = WearsicDimens.SheetRowMinHeight)
-            .clip(RoundedCornerShape(WearsicDimens.CardRadius))
-            .background(if (isPlaying) accent.copy(alpha = 0.16f) else WearsicGlassFill)
-            .border(1.dp, if (isPlaying) accent.copy(alpha = 0.5f) else WearsicGlassBorder, RoundedCornerShape(WearsicDimens.CardRadius))
-            .wearsicClickable(
-                enabled = isTrack,
-                pressedScale = 0.97f,
-                onClick = onPlay,
-                onLongClick = if (isTrack) onToggleFavorite else null,
-            )
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val thumb = result.thumbnail()
-        val context = LocalContext.current
-        if (thumb == null) {
-            Box(
-                modifier = Modifier
-                    .size(WearsicDimens.RowThumbnail)
-                    .clip(RoundedCornerShape(WearsicDimens.ArtRadius))
-                    .background(Color.White.copy(alpha = 0.08f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.MusicNote,
-                    contentDescription = null,
-                    tint = WearsicTextMuted,
-                    modifier = Modifier.size(18.dp)
+    WearsicSongRow(
+        title = title,
+        artist = subtitle,
+        artworkUrl = result.thumbnail()?.url,
+        onClick = onPlay,
+        onLongClick = if (isTrack) onToggleFavorite else null,
+        titleColor = if (isPlaying) accent else WearsicTextPrimary,
+        artistColor = if (isPlaying) accent.copy(alpha = 0.8f) else WearsicTextPrimary.copy(alpha = 0.8f),
+        trailing = {
+            if (isTrack) {
+                WearsicSongRowActionButton(
+                    icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.MusicNote,
+                    contentDescription = if (isFavorite) "Favorited" else "Favorite",
+                    onClick = onToggleFavorite,
+                    tint = if (isFavorite || isPlaying) accent else Color.White.copy(alpha = 0.30f),
+                    visualSize = if (isFavorite) 15.dp else 12.dp,
                 )
             }
-        } else {
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(thumb.url)
-                    .size(120)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(WearsicDimens.RowThumbnail)
-                    .clip(RoundedCornerShape(WearsicDimens.ArtRadius))
-            )
         }
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = if (isPlaying) accent else Color.White.copy(alpha = 0.94f),
-                fontSize = 13.sp,
-                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = if (isTrack) subtitle else "$subtitle — open on the YouTube app",
-                color = Color.White.copy(alpha = 0.60f),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (isTrack) {
-            Icon(
-                imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.MusicNote,
-                contentDescription = if (isFavorite) "Favorited" else null,
-                tint = if (isPlaying || isFavorite) accent else Color.White.copy(alpha = 0.30f),
-                modifier = Modifier
-                    .size(if (isFavorite) 15.dp else 12.dp)
-                    .padding(top = 0.dp)
-            )
-        }
-    }
+    )
 }
 
 @Composable

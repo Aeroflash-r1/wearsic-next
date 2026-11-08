@@ -2,6 +2,7 @@ package com.wearsic.next.ui.theme
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -39,6 +40,8 @@ val WearsicGlassBorder = Color(0x2EFFFFFF) // white 18%
 
 // ── Text tokens ────────────────────────────────────────────────────────────
 val WearsicTextPrimary = Color(0xFFE6E1E5)
+val WearsicTextPrimaryDark = Color(0xFF000000)
+val WearsicTextSecondary = Color(0xFFC4B0FF)
 val WearsicTextWhite80 = Color(0xCCFFFFFF)
 val WearsicTextWhite60 = Color(0x99FFFFFF)
 val WearsicTextWhite40 = Color(0x66FFFFFF)
@@ -80,6 +83,16 @@ const val ACCENT_AUTO = "Auto (artwork)"
  * overlays the current artwork colour hoisted up from the player).
  */
 val LocalWearsicAccent = staticCompositionLocalOf { WearsicVibrantLavender }
+
+/** Container tone derived from the current accent (used behind accent icons). */
+@Composable
+fun wearsicAccentContainer(): Color {
+    return androidx.compose.ui.graphics.lerp(LocalWearsicAccent.current, Color.Black, 0.55f)
+}
+
+/** Secondary text tone: lavender with the static palette. */
+@Composable
+fun wearsicSecondaryText(): Color = WearsicTextSecondary
 
 /**
  * Live user preferences surfaced as Compose state, backed by
