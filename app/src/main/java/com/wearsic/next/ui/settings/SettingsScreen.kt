@@ -264,15 +264,20 @@ private fun ToggleRow(
                 color = Color.White.copy(alpha = 0.94f),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                // Two lines on the 226dp face: "Rotate artwork disc" simply
+                // does not fit one line beside icon + switch; a hard ellipsis
+                // read as broken, not compact.
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 15.sp
             )
             Text(
                 text = sublabel,
                 color = Color.White.copy(alpha = 0.45f),
                 fontSize = 10.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 12.sp
             )
         }
         // Switch pill: knob slides left/right with the state.

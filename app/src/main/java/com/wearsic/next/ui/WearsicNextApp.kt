@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -34,7 +33,6 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -159,8 +157,10 @@ fun WearsicNextApp(
 }
 
 /**
- * HOME — the launch surface. A hero disc (now-playing recap when a song is
- * loaded) above glass action rows. Everything tappable is a full 44dp row.
+ * HOME — the launch surface. Faithful to the stable Wearsic home's visual
+ * weight: a big bold title + subtitle explains where you are, ONE
+ * accent-filled flagship pill (Search Music), then taller stadium-shaped
+ * glass rows. Everything tappable is a 48dp+ target.
  */
 @Composable
 private fun HomeScreen(
@@ -184,77 +184,78 @@ private fun HomeScreen(
                 .wearsicEntrance()
                 .wearsicRotaryScroll(listState),
             contentPadding = wearsicListContentPadding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             item {
-                // Hero: accent-glow logo disc; tappable into Now Playing when
-                // a song is loaded.
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 2.dp)
-                        .wearsicClickable(enabled = hasSong, onClick = onNowPlaying)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(accent.copy(alpha = 0.30f), Color.Transparent)
-                                )
-                            )
-                            .border(1.dp, accent.copy(alpha = 0.35f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF1E1C22)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = accent,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "WEARSIC NEXT",
+                        text = "Music",
                         color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.2.sp
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp
                     )
-                    StateLine(state)
+                    Text(
+                        text = "Your music, on your wrist",
+                        color = Color.White.copy(alpha = 0.55f),
+                        fontSize = 11.sp
+                    )
                 }
             }
 
             item {
-                HomeActionRow(
-                    icon = Icons.Rounded.PlayCircle,
-                    label = if (hasSong) "Now playing" else "Player",
-                    sublabel = if (hasSong) state.item?.title else "Browse what's loaded",
-                    enabled = hasSong,
-                    onClick = onNowPlaying,
-                )
+                // Flagship CTA — the accent-filled stadium pill with an icon
+                // chip, straight from the stable home.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                        .clip(RoundedCornerShape(26.dp))
+                        .background(accent)
+                        .wearsicClickable(pressedScale = 0.97f, onClick = onSearch)
+                        .padding(start = 10.dp, end = 16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = Color(0xFF17161A),
+                            modifier = Modifier.size(21.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Search Music",
+                        color = Color(0xFF17161A),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.2).sp
+                    )
+                }
+            }
+
+            if (hasSong) {
+                item {
+                    HomePillRow(
+                        icon = Icons.Rounded.PlayCircle,
+                        label = "Now playing",
+                        sublabel = state.item?.title,
+                        tint = accent,
+                        onClick = onNowPlaying,
+                    )
+                }
             }
             item {
-                HomeActionRow(
-                    icon = Icons.Rounded.Search,
-                    label = "Search",
-                    sublabel = "Any song on YouTube Music",
-                    onClick = onSearch,
-                )
-            }
-            item {
-                HomeActionRow(
+                HomePillRow(
                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
                     label = "Queue",
                     sublabel = "What's lined up",
@@ -262,7 +263,7 @@ private fun HomeScreen(
                 )
             }
             item {
-                HomeActionRow(
+                HomePillRow(
                     icon = Icons.Rounded.GraphicEq,
                     label = "Sound",
                     sublabel = "Volume on this watch",
@@ -270,7 +271,7 @@ private fun HomeScreen(
                 )
             }
             item {
-                HomeActionRow(
+                HomePillRow(
                     icon = Icons.Rounded.Settings,
                     label = "Settings",
                     sublabel = "Colour · disc · haptics",
@@ -281,72 +282,57 @@ private fun HomeScreen(
     }
 }
 
+/**
+ * Secondary home action: stadium glass row, semibold 15sp label + quiet
+ * sublabel — the stable home's secondary-row weight.
+ */
 @Composable
-private fun StateLine(state: com.wearsic.next.playback.PlaybackUiState) {
-    val text = when {
-        state.phase == PlaybackPhase.Error -> state.errorMessage ?: "Playback error — tap play to retry"
-        state.item == null -> "No song loaded"
-        else -> {
-            val item = requireNotNull(state.item)
-            if (state.isPlaying) "Playing · ${item.title}" else "Paused · ${item.title}"
-        }
-    }
-    Text(
-        text = text,
-        color = WearsicTextMuted,
-        fontSize = 10.sp,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 3.dp, start = 28.dp, end = 28.dp)
-    )
-}
-
-@Composable
-private fun HomeActionRow(
+private fun HomePillRow(
     icon: ImageVector,
     label: String,
     sublabel: String?,
     onClick: () -> Unit,
+    tint: Color = Color.White.copy(alpha = 0.90f),
     enabled: Boolean = true,
 ) {
     val accent = LocalWearsicAccent.current
     Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = WearsicDimens.SheetRowMinHeight)
-            .clip(RoundedCornerShape(WearsicDimens.CardRadius))
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(26.dp))
             .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, WearsicSurfaceBorder, RoundedCornerShape(WearsicDimens.CardRadius))
+            .border(1.dp, WearsicSurfaceBorder, RoundedCornerShape(26.dp))
             .wearsicClickable(enabled = enabled, pressedScale = 0.98f, onClick = onClick)
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 14.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
             tint = if (enabled) accent else WearsicTextMuted,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(22.dp)
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = label,
-                color = if (enabled) Color.White.copy(alpha = 0.94f) else WearsicTextMuted,
-                fontSize = 14.sp,
+                color = Color.White,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = sublabel.orEmpty(),
-                color = Color.White.copy(alpha = 0.45f),
-                fontSize = 10.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            sublabel?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    color = Color.White.copy(alpha = 0.45f),
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
+

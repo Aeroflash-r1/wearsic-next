@@ -79,7 +79,112 @@ class PlaybackController(
             }
             this@PlaybackController.controller = controller
             controller.addListener(this@PlaybackController)
+            // A fresh controller starts with an Idle state even while the
+            // service's player keeps playing (screen off/on, process restart,
+            // re-entry from the launcher). Adopt the session's live item and
+            // the persisted queue snapshot immediately.
+            hydrateFromSession(controller)
         }
+    }
+
+    @kotlinx.serialization.Serializable
+    private data class QueueSnapshot(val index: Int, val items: List<PlaybackItem>)
+
+    private val itemJson by lazy {
+        kotlinx.serialization.json.Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
+    }
+
+    /** Persists the queue so an app restart shows the whole list, not one song. */
+    private fun persistQueueSnapshot() {
+        runCatching {
+            val text = itemJson.encodeToString(
+                QueueSnapshot(
+                    index = currentIndex,
+                    items = queueItems,
+                )
+            )
+            context.getSharedPreferences(QueueStore, Context.MODE_PRIVATE)
+                .edit().putString(QueueKey, text).apply()
+        }
+    }
+
+    private fun restoreQueueSnapshot() {
+        if (queueItems.isNotEmpty()) return
+        runCatching {
+            val text = context.getSharedPreferences(QueueStore, Context.MODE_PRIVATE)
+                .getString(QueueKey, null) ?: return
+            val snap = itemJson.decodeFromString<QueueSnapshot>(text)
+            queueItems.addAll(snap.items)
+            currentIndex = if (snap.items.isEmpty()) -1 else snap.index.coerceIn(0, snap.items.lastIndex)
+        }
+    }
+
+    private fun hydrateFromSession(c: MediaController) {
+        val mi = c.currentMediaItem ?: return
+        val raw = runCatching { mi.mediaMetadata.extras?.getString(KEY_ITEM_JSON) }.getOrNull()
+        val decoded = raw?.let { text ->
+            runCatching { itemJson.decodeFromString<PlaybackItem>(text) }.getOrNull()
+        }
+        // Fallback: rebuild a minimal item straight from MediaMetadata.
+        val fromSession: PlaybackItem = decoded ?: run {
+            val vid = mi.mediaId
+            if (vid.isBlank()) return
+            val md = mi.mediaMetadata
+            PlaybackItem(
+                videoId = vid,
+                title = md.title?.toString().orEmpty(),
+                artists = md.artist?.toString()?.let { a ->
+                    listOf(com.wearsic.next.engine.Artist(name = a))
+                }.orEmpty(),
+                album = md.albumTitle?.toString()?.let { al ->
+                    com.wearsic.next.engine.Album(name = al)
+                },
+                thumbnails = md.artworkUri?.toString()?.let { u ->
+                    listOf(com.wearsic.next.engine.Thumbnail(url = u))
+                }.orEmpty(),
+            )
+        }
+
+        restoreQueueSnapshot()
+
+        val found = queueItems.indexOfFirst { it.videoId == fromSession.videoId }
+        val item = if (found >= 0) {
+            // Trust the session's own copy for the stream (it is playing); merge display fields it knows better.
+            queueItems[found] = queueItems[found].copy(stream = fromSession.stream ?: queueItems[found].stream)
+            currentIndex = found
+            queueItems[found]
+        } else {
+            queueItems.add(fromSession)
+            currentIndex = queueItems.lastIndex
+            fromSession
+        }
+        publishQueue()
+
+        if (_state.value.item?.videoId == item.videoId && _state.value.phase != PlaybackPhase.Idle) {
+            return // UI already mirrors this song; avoid flicker.
+        }
+        val phase = when {
+            c.isPlaying -> PlaybackPhase.Playing
+            c.playbackState == Player.STATE_BUFFERING -> PlaybackPhase.Buffering
+            c.playbackState == Player.STATE_READY -> PlaybackPhase.Paused
+            else -> _state.value.phase.takeIf { it != PlaybackPhase.Idle } ?: PlaybackPhase.Paused
+        }
+        _state.value = _state.value.copy(
+            phase = phase,
+            item = item,
+            isPlaying = c.isPlaying,
+            positionMs = c.currentPosition,
+            durationMs = if (c.duration > 0L) c.duration else item.durationMs ?: 0L,
+            bufferedMs = c.bufferedPosition,
+            shuffleEnabled = c.shuffleModeEnabled,
+            repeatMode = c.repeatMode,
+            hasPrev = currentIndex > 0,
+            hasNext = currentIndex < queueItems.lastIndex,
+            errorMessage = null,
+        )
     }
 
     // --- Queue / selection -------------------------------------------------
@@ -96,6 +201,7 @@ class PlaybackController(
     fun playNext(item: PlaybackItem) {
         queueItems.add(currentIndex + 1, item)
         if (currentIndex + 1 == queueItems.lastIndex) _state.value = _state.value.copy(hasNext = true)
+        publishQueue()
     }
 
     private fun playCurrent() {
@@ -194,6 +300,7 @@ class PlaybackController(
     private fun publishQueue() {
         _queue.value = queueItems.toList()
         _queueIndex.value = currentIndex
+        persistQueueSnapshot()
     }
 
     private fun publishQueueIndex() {
@@ -331,11 +438,18 @@ class PlaybackController(
 
     private fun toMediaItem(item: PlaybackItem): MediaItem {
         val stream = requireNotNull(item.stream)
+        // The full item rides inside the metadata extras (JSON): a restarted
+        // UI re-reads it via [hydrateFromSession] and shows the live song
+        // instead of "Nothing playing" while audio keeps going.
+        val extras = android.os.Bundle().apply {
+            putString(KEY_ITEM_JSON, runCatching { itemJson.encodeToString(item) }.getOrNull())
+        }
         val metadata = MediaMetadata.Builder()
             .setTitle(item.title)
             .setArtist(item.artistLabel)
             .setAlbumTitle(item.albumLabel)
             .setArtworkUri(android.net.Uri.parse(item.artworkUrl))
+            .setExtras(extras)
             .build()
         return MediaItem.Builder()
             .setMediaId(item.videoId)
@@ -352,6 +466,10 @@ class PlaybackController(
     }
 
     companion object {
+        private const val QueueStore = "wearsic_next_queue"
+        private const val QueueKey = "queue_snapshot_v1"
+        private const val KEY_ITEM_JSON = "wearsic_item_json_v1"
+
         fun create(context: Context, engine: RustEngine): PlaybackController {
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
             return PlaybackController(context, engine, scope)
