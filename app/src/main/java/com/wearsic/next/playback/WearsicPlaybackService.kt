@@ -68,6 +68,15 @@ class WearsicPlaybackService : MediaSessionService() {
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
+            // YouTube CDN 403s default OkHttp UA on signed IOS-client
+            // stream URLs; mirror the UA used to resolve the stream.
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .header("User-Agent", IOS_CLIENT_UA)
+                    .header("Accept", "*/*")
+                    .build()
+                chain.proceed(request)
+            }
             .build()
         val dataSourceFactory = DefaultDataSource.Factory(
             this,
@@ -108,6 +117,10 @@ class WearsicPlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /** Matches the IOS client UA used by stream resolution. */
+        private const val IOS_CLIENT_UA =
+            "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X;)"
+
         /** Creates (or reuses) the shared engine handle. */
         fun engine(): RustEngine = RustEngine.create().also { it.networkInit() }
     }

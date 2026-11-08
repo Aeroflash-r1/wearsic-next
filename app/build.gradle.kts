@@ -27,39 +27,76 @@ val sdkDir: File = run {
     } ?: file("/root/android-sdk")
 }
 
-val buildRustEngine by tasks.registering(Exec::class) {
+val rustCargoPath = System.getProperty("user.home") + "/.cargo/bin"
+val rustLldPath = File(
+    System.getProperty("user.home"),
+    ".rustup/toolchains/stable-aarch64-unknown-linux-gnu/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld",
+).absolutePath
+val ndkSysrootPath = File(
+    sdkDir,
+    "ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot",
+).absolutePath
+val unwindLibsPath = File(System.getProperty("user.home"), ".wearsic-link-libs").absolutePath
+
+val buildRustEngineArm64 by tasks.registering(Exec::class) {
     group = "build"
-    description = "Compiles the Rust engine (libwearsic_engine.so) for arm64-v8a."
     workingDir(rustDir)
-    // Build environment: PATH with cargo, NDK sysroot for LLD, and the
-    // empty libunwind archive (Rust's own libunwind rlib provides symbols).
-    environment("PATH", System.getenv("PATH") + ":" + System.getProperty("user.home") + "/.cargo/bin")
-    val ndkSysroot = File(sdkDir, "ndk/${android.ndkVersion ?: "27.2.12479018"}/toolchains/llvm/prebuilt/linux-x86_64/sysroot")
-    val unwindLibs = File(System.getProperty("user.home"), ".wearsic-link-libs")
-    val cargoOutput = File(rustDir, "target/aarch64-linux-android/release/libwearsic_engine.so")
-    val abiOutputDir = File(rustJniLibsDir, "arm64-v8a")
-    val engineOutput = File(abiOutputDir, "libwearsic_engine.so")
+    environment("PATH", System.getenv("PATH") + ":" + rustCargoPath)
+    environment(
+        "RUSTFLAGS",
+        "-C linker=$rustLldPath " +
+            "-C link-arg=--sysroot=$ndkSysrootPath " +
+            "-C link-arg=-L$ndkSysrootPath/usr/lib/aarch64-linux-android/26 " +
+            "-C link-arg=-L$unwindLibsPath",
+    )
+    commandLine("cargo", "build", "--target", "aarch64-linux-android", "--release")
+}
+
+val buildRustEngineArmv7 by tasks.registering(Exec::class) {
+    group = "build"
+    workingDir(rustDir)
+    environment("PATH", System.getenv("PATH") + ":" + rustCargoPath)
+    environment(
+        "CC_armv7_linux_androideabi",
+        "/data/data/com.termux/files/usr/bin/clang --target=armv7a-linux-androideabi26 -march=armv7-a",
+    )
+    environment("AR_armv7_linux_androideabi", "/data/data/com.termux/files/usr/bin/llvm-ar")
+    environment(
+        "CFLAGS_armv7_linux_androideabi",
+        "-march=armv7-a -D__ANDROID_API__=26 -D__ANDROID_MIN_SDK_VERSION__=26",
+    )
+    environment(
+        "RUSTFLAGS",
+        "-C linker=$rustLldPath " +
+            "-C link-arg=--sysroot=$ndkSysrootPath " +
+            "-C link-arg=-L$ndkSysrootPath/usr/lib/arm-linux-androideabi/26 " +
+            "-C link-arg=-L$unwindLibsPath",
+    )
+    commandLine("cargo", "build", "--target", "armv7-linux-androideabi", "--release")
+}
+
+val buildRustEngine by tasks.registering {
+    group = "build"
+    description = "Builds the Rust engine for arm64-v8a + armeabi-v7a and stages jniLibs."
+    dependsOn(buildRustEngineArm64, buildRustEngineArmv7)
+    val abiOutputDir = rustJniLibsDir
+    val arm64Out = File(abiOutputDir, "arm64-v8a/libwearsic_engine.so")
+    val armv7Out = File(abiOutputDir, "armeabi-v7a/libwearsic_engine.so")
     inputs.dir(File(rustDir, "crates"))
     inputs.file(File(rustDir, "Cargo.toml"))
-    outputs.file(engineOutput)
-
-    // Reproduce the working aarch64 host link recipe (see BUILD_INSTRUCTIONS).
-    val rustLld = File(System.getProperty("user.home"),
-        ".rustup/toolchains/stable-aarch64-unknown-linux-gnu/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld")
-    environment("RUSTFLAGS",
-        "-C linker=${rustLld.absolutePath} " +
-            "-C link-arg=--sysroot=${ndkSysroot.absolutePath} " +
-            "-C link-arg=-L${ndkSysroot.absolutePath}/usr/lib/aarch64-linux-android/26 " +
-            "-C link-arg=-L${unwindLibs.absolutePath}")
-    commandLine("cargo", "build", "--target", "aarch64-linux-android", "--release")
-
+    outputs.file(arm64Out)
+    outputs.file(armv7Out)
     doLast {
-        if (!cargoOutput.exists()) {
-            throw GradleException("Rust build did not produce $cargoOutput")
-        }
-        abiOutputDir.mkdirs()
-        cargoOutput.copyTo(engineOutput, overwrite = true)
-        println("Rust engine OK: ${engineOutput.absolutePath}")
+        val cargoArm64 = File(rustDir, "target/aarch64-linux-android/release/libwearsic_engine.so")
+        if (!cargoArm64.exists()) throw GradleException("arm64 Rust build produced no .so")
+        File(abiOutputDir, "arm64-v8a").mkdirs()
+        cargoArm64.copyTo(arm64Out, overwrite = true)
+
+        val cargoArmv7 = File(rustDir, "target/armv7-linux-androideabi/release/libwearsic_engine.so")
+        if (!cargoArmv7.exists()) throw GradleException("armv7 Rust build produced no .so")
+        File(abiOutputDir, "armeabi-v7a").mkdirs()
+        cargoArmv7.copyTo(armv7Out, overwrite = true)
+        println("Rust engines OK: ${arm64Out.absolutePath}, ${armv7Out.absolutePath}")
     }
 }
 

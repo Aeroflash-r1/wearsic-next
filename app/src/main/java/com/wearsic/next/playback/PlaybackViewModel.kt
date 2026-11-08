@@ -20,9 +20,19 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
 
     val state: StateFlow<PlaybackUiState> get() = controller.state
 
+    /** Queue snapshot (emitted only on mutations — cheap to observe). */
+    val queue: StateFlow<List<PlaybackItem>> get() = controller.queue
+
+    /** Index of the currently playing entry in [queue]. */
+    val queueIndex: StateFlow<Int> get() = controller.queueIndex
+
     fun playTracks(items: List<PlaybackItem>, startIndex: Int = 0) {
         controller.play(items, startIndex)
     }
+
+    fun playQueueIndex(index: Int) = controller.playQueueIndex(index)
+
+    fun removeFromQueue(index: Int) = controller.removeFromQueue(index)
 
     fun playSearchResult(track: com.wearsic.next.engine.MusicSearchResult.Track) {
         // Resolution is handled lazily inside the controller.
@@ -44,6 +54,7 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     fun seekTo(ms: Long) = controller.seekTo(ms)
     fun setShuffle(on: Boolean) = controller.setShuffle(on)
     fun cycleRepeatMode() = controller.cycleRepeatMode()
+    fun retry() = controller.retry()
 
     override fun onCleared() {
         controller.release()

@@ -44,7 +44,14 @@ class PlaybackController(
     private val _state = MutableStateFlow(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
 
-    private val queue = mutableListOf<PlaybackItem>()
+    /** Queue snapshot for the Queue screen (emitted only on mutations). */
+    private val _queue = MutableStateFlow<List<PlaybackItem>>(emptyList())
+    val queue: StateFlow<List<PlaybackItem>> = _queue.asStateFlow()
+
+    private val _queueIndex = MutableStateFlow(-1)
+    val queueIndex: StateFlow<Int> = _queueIndex.asStateFlow()
+
+    private val queueItems = mutableListOf<PlaybackItem>()
     private var currentIndex = -1
     private var resumeAfterRefresh = false
 
@@ -79,19 +86,20 @@ class PlaybackController(
 
     fun play(items: List<PlaybackItem>, startIndex: Int) {
         if (items.isEmpty()) return
-        queue.clear()
-        queue.addAll(items)
+        queueItems.clear()
+        queueItems.addAll(items)
         currentIndex = startIndex.coerceIn(0, items.lastIndex)
+        publishQueue()
         playCurrent()
     }
 
     fun playNext(item: PlaybackItem) {
-        queue.add(currentIndex + 1, item)
-        if (currentIndex + 1 == queue.lastIndex) _state.value = _state.value.copy(hasNext = true)
+        queueItems.add(currentIndex + 1, item)
+        if (currentIndex + 1 == queueItems.lastIndex) _state.value = _state.value.copy(hasNext = true)
     }
 
     private fun playCurrent() {
-        val item = queue.getOrNull(currentIndex) ?: return
+        val item = queueItems.getOrNull(currentIndex) ?: return
         _state.value = _state.value.copy(phase = PlaybackPhase.Resolving, item = item)
         scope.launch {
             val descriptor = resolveOrRefresh(item)
@@ -103,7 +111,7 @@ class PlaybackController(
                 return@launch
             }
             val fresh = item.copy(stream = descriptor)
-            queue[currentIndex] = fresh
+                queueItems[currentIndex] = fresh
             _state.value = _state.value.copy(
                 phase = PlaybackPhase.Preparing,
                 item = fresh,
@@ -133,12 +141,17 @@ class PlaybackController(
 
     fun togglePlayPause() {
         val c = controller ?: return
+        if (_state.value.phase == PlaybackPhase.Error) {
+            retry()
+            return
+        }
         if (c.isPlaying) c.pause() else c.play()
     }
 
     fun skipNext() {
-        if (currentIndex < queue.lastIndex) {
+        if (currentIndex < queueItems.lastIndex) {
             currentIndex++
+            publishQueueIndex()
             playCurrent()
         } else {
             controller?.pause()
@@ -148,10 +161,43 @@ class PlaybackController(
     fun skipPrevious() {
         if (currentIndex > 0) {
             currentIndex--
+            publishQueueIndex()
             playCurrent()
         } else {
             controller?.seekTo(0L)
         }
+    }
+
+    /** Jump to a queue entry from the Queue screen. */
+    fun playQueueIndex(index: Int) {
+        if (index in queueItems.indices && index != currentIndex) {
+            currentIndex = index
+            publishQueueIndex()
+            playCurrent()
+        } else if (index == currentIndex) {
+            controller?.seekTo(0L)
+        }
+    }
+
+    /** Remove a track from the queue (never the currently playing one). */
+    fun removeFromQueue(index: Int) {
+        if (index in queueItems.indices && index != currentIndex) {
+            queueItems.removeAt(index)
+            if (index < currentIndex) {
+                currentIndex--
+                publishQueueIndex()
+            }
+            publishQueue()
+        }
+    }
+
+    private fun publishQueue() {
+        _queue.value = queueItems.toList()
+        _queueIndex.value = currentIndex
+    }
+
+    private fun publishQueueIndex() {
+        _queueIndex.value = currentIndex
     }
 
     fun seekTo(positionMs: Long) {
@@ -160,6 +206,14 @@ class PlaybackController(
 
     fun setShuffle(enabled: Boolean) {
         controller?.shuffleModeEnabled = enabled
+    }
+
+    /** Re-attempts resolution + playback after a failure (user taps play). */
+    fun retry() {
+        if (_state.value.phase == PlaybackPhase.Error) {
+            resumeAfterRefresh = false
+            playCurrent()
+        }
     }
 
     fun cycleRepeatMode() {
@@ -193,7 +247,7 @@ class PlaybackController(
 
     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
         // Best-effort refresh-once for signed-URL failures (403/410).
-        val item = queue.getOrNull(currentIndex) ?: return
+        val item = queueItems.getOrNull(currentIndex) ?: return
         if (!resumeAfterRefresh) {
             resumeAfterRefresh = true
             scope.launch {
@@ -204,7 +258,7 @@ class PlaybackController(
                 }
                 if (fresh != null) {
                     val updated = item.copy(stream = fresh)
-                    queue[currentIndex] = updated
+                    queueItems[currentIndex] = updated
                     controller?.setMediaItem(toMediaItem(updated), 0L)
                     controller?.prepare()
                     controller?.play()
@@ -238,24 +292,37 @@ class PlaybackController(
                 durationMs = player.duration,
                 bufferedMs = player.bufferedPosition,
                 hasPrev = currentIndex > 0,
-                hasNext = currentIndex < queue.lastIndex,
+                hasNext = currentIndex < queueItems.lastIndex,
                 shuffleEnabled = player.shuffleModeEnabled,
                 repeatMode = player.repeatMode,
             )
         }
     }
 
-    /** Cheap position tick for the UI (no flood). */
+    /**
+     * Cheap position tick for the UI (no flood). Emissions are SKIPPED while
+     * nothing changes — a paused or idle player costs no state churn, which
+     * keeps the Compose pipeline (and the watch's CPU) asleep.
+     */
     fun startPositionTicker() {
         scope.launch {
             while (true) {
                 delay(500)
                 val c = controller ?: continue
-                _state.value = _state.value.copy(
-                    positionMs = c.currentPosition,
-                    durationMs = c.duration,
-                    bufferedMs = c.bufferedPosition,
-                )
+                val position = c.currentPosition
+                val duration = if (c.duration > 0L) c.duration else _state.value.durationMs
+                val buffered = c.bufferedPosition
+                val current = _state.value
+                if (current.positionMs != position ||
+                    current.durationMs != duration ||
+                    current.bufferedMs != buffered
+                ) {
+                    _state.value = current.copy(
+                        positionMs = position,
+                        durationMs = duration,
+                        bufferedMs = buffered,
+                    )
+                }
             }
         }
     }

@@ -1,144 +1,289 @@
 package com.wearsic.next.ui.search
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.wearsic.next.engine.MusicSearchResult
 import com.wearsic.next.engine.Thumbnail
+import com.wearsic.next.ui.components.WearsicScreenHeader
+import com.wearsic.next.ui.components.WearsicSearchShimmerRow
+import com.wearsic.next.ui.data.FavoritesStore
+import com.wearsic.next.playback.PlaybackViewModel
+import com.wearsic.next.ui.theme.LocalWearsicAccent
+import com.wearsic.next.ui.theme.WearsicDimens
+import com.wearsic.next.ui.theme.WearsicError
+import com.wearsic.next.ui.theme.WearsicGlassBorder
+import com.wearsic.next.ui.theme.WearsicGlassFill
+import com.wearsic.next.ui.theme.WearsicSurfaceActive
+import com.wearsic.next.ui.theme.WearsicSurfaceBorderSubtle
+import com.wearsic.next.ui.theme.WearsicTextMuted
+import com.wearsic.next.ui.theme.wearsicListContentPadding
+import com.wearsic.next.ui.util.wearsicClickable
+import com.wearsic.next.ui.util.wearsicEntrance
+import com.wearsic.next.ui.util.wearsicRotaryScroll
+import java.util.Locale
 
 /**
- * Polished Wear OS search screen (Galaxy Watch 7 44 mm round).
- * Search input (debounced), filter chips, typed results, loading/empty/error
- * states, and pagination. Selecting a result emits a structured event via
- * [onResultSelected] (playback is Phase 5/6).
+ * SEARCH — the standalone search screen in the Wearsic design language:
+ * header, interactive search pill, filter chips, shimmer-shaped loading rows
+ * and glass track rows with haptics + long-press favourites.
+ *
+ * Selecting a track plays it immediately (the Rust engine resolves the
+ * stream); everything else still debounces as you type.
  */
 @Composable
 fun SearchScreen(
     onResultSelected: (MusicSearchResult) -> Unit,
     onBack: () -> Unit = {},
+    playbackViewModel: PlaybackViewModel? = null,
     viewModel: SearchViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val query by viewModel.query.collectAsState()
     val filter by viewModel.filter.collectAsState()
-
-    LaunchedEffect(Unit) {
-        // nothing to do on entry; ViewModel survives rotation
+    val playingVideoId = playbackViewModel?.let { vm ->
+        val s by vm.state.collectAsState()
+        s.item?.videoId
     }
+    val listState = rememberScalingLazyListState()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-    ) {
-        // --- Search input ---
-        BasicTextField(
-            value = query,
-            onValueChange = viewModel::onQueryChanged,
-            textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-            singleLine = true,
+    ScreenScaffold(
+        scrollState = listState,
+    ) { contentPadding ->
+        ScalingLazyColumn(
+            state = listState,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xFF1E1C22))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .fillMaxSize()
+                .wearsicEntrance()
+                .wearsicRotaryScroll(listState),
+            contentPadding = wearsicListContentPadding(contentPadding),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (query.isEmpty()) {
-                Text(
-                    "Search music…",
-                    color = Color.White.copy(alpha = 0.4f),
-                    fontSize = 13.sp,
-                )
-            }
-        }
+            item { WearsicScreenHeader("Search", subtitle = "Find your next favorite") }
 
-        // --- Filter chips (horizontally scrollable) ---
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            SearchFilter.entries.forEach { f ->
-                val selected = f == filter
+            // Interactive search pill.
+            item {
+                var isFocused by remember { mutableStateOf(false) }
                 Box(
                     modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = WearsicDimens.TouchTarget)
                         .clip(CircleShape)
-                        .background(
-                            if (selected) Color(0xFFC4B0FF)
-                            else Color(0xFF232027)
+                        .background(if (isFocused) WearsicSurfaceActive else WearsicGlassFill)
+                        .border(
+                            1.dp,
+                            if (isFocused) LocalWearsicAccent.current else WearsicSurfaceBorderSubtle,
+                            CircleShape
                         )
-                        .clickableRow { viewModel.onFilterSelected(f) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 12.dp)
+                        .wearsicClickable { keyboardController?.show() },
+                    contentAlignment = Alignment.CenterStart
                 ) {
-                    Text(
-                        text = f.label,
-                        color = if (selected) Color(0xFF1C1A22) else Color.White.copy(alpha = 0.8f),
-                        fontSize = 11.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = "Search Icon",
+                            tint = if (isFocused) LocalWearsicAccent.current else WearsicTextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "Type artist or song…",
+                                    color = WearsicTextMuted,
+                                    fontSize = 12.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            BasicTextField(
+                                value = query,
+                                onValueChange = viewModel::onQueryChanged,
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Normal
+                                ),
+                                cursorBrush = SolidColor(LocalWearsicAccent.current),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(
+                                    onSearch = {
+                                        keyboardController?.hide()
+                                        viewModel.retry()
+                                    },
+                                    onDone = { keyboardController?.hide() },
+                                    onGo = { keyboardController?.hide() }
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(24.dp)
+                                    .onFocusChanged { focusState -> isFocused = focusState.isFocused }
+                            )
+                        }
+                        if (query.isNotEmpty()) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Clear Search",
+                                tint = WearsicTextMuted,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .wearsicClickable(haptic = false) { viewModel.onQueryChanged("") }
+                                    .padding(6.dp)
+                            )
+                        }
+                    }
                 }
             }
-        }
 
-        // --- Content area ---
-        when (val s = state) {
-            is SearchUiState.Idle -> Centered("Search YouTube Music from your watch")
-            is SearchUiState.Loading -> Centered("Searching…")
-            is SearchUiState.Error -> Centered("Search error: ${s.message}", error = true)
-            is SearchUiState.Results -> {
-                if (s.results.isEmpty()) {
-                    Centered("No results")
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(s.results, key = { resultKey(it) }) { result ->
-                            ResultRow(result) { onResultSelected(result) }
+            // Filter chips.
+            item {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SearchFilter.entries.forEach { f ->
+                        val selected = f == filter
+                        val accent = LocalWearsicAccent.current
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        selected -> accent
+                                        else -> WearsicGlassFill
+                                    }
+                                )
+                                .border(1.dp, if (selected) accent else WearsicGlassBorder, CircleShape)
+                                .wearsicClickable(haptic = false) { viewModel.onFilterSelected(f) }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = f.label,
+                                color = if (selected) Color(0xFF17161A) else Color.White.copy(alpha = 0.85f),
+                                fontSize = 10.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1
+                            )
                         }
-                        if (s.continuation != null) {
-                            item(key = "load_more") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(Color(0xFF232027))
-                                        .clickableRow { viewModel.loadMore() }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        if (s.loadingMore) "Loading more…" else "Show more",
-                                        color = Color(0xFFC4B0FF),
-                                        fontSize = 12.sp,
+                    }
+                }
+            }
+
+            when (val s = state) {
+                is SearchUiState.Idle -> {
+                    item { HintLine("Search YouTube Music from your watch") }
+                }
+                is SearchUiState.Loading -> {
+                    repeat(3) { i ->
+                        item(key = "shimmer_$i") { WearsicSearchShimmerRow() }
+                    }
+                }
+                is SearchUiState.Error -> {
+                    item {
+                        HintLine(
+                            text = "Search failed — ${s.message}",
+                            isError = true,
+                            retry = viewModel::retry
+                        )
+                    }
+                }
+                is SearchUiState.Results -> {
+                    if (s.results.isEmpty()) {
+                        item {
+                            HintLine(
+                                text = "No results for \"${s.query}\"",
+                                isError = false
+                            )
+                        }
+                    } else {
+                        val visible = when (filter) {
+                            SearchFilter.All -> s.results
+                            SearchFilter.Songs -> s.results.filterIsInstance<MusicSearchResult.Track>()
+                            SearchFilter.Artists -> s.results.filterIsInstance<MusicSearchResult.Artist>()
+                            SearchFilter.Albums -> s.results.filterIsInstance<MusicSearchResult.Album>()
+                            SearchFilter.Playlists -> s.results.filterIsInstance<MusicSearchResult.Playlist>()
+                        }
+                        if (visible.isEmpty()) {
+                            item { HintLine("No ${filter.label.lowercase(Locale.US)} in results") }
+                        } else {
+                            items(visible.size) { index ->
+                                val result = visible[index]
+                                SearchResultRow(
+                                    result = result,
+                                    isPlaying = result is MusicSearchResult.Track &&
+                                        result.track.videoId == playingVideoId,
+                                    isFavorite = result is MusicSearchResult.Track &&
+                                        FavoritesStore.isFavorite(result.track.videoId),
+                                    onPlay = { onResultSelected(result) },
+                                    onToggleFavorite = {
+                                        (result as? MusicSearchResult.Track)?.let {
+                                            FavoritesStore.toggle(it.track.videoId)
+                                        }
+                                    }
+                                )
+                            }
+                            s.continuation?.let {
+                                item(key = "load_more") {
+                                    LoadMoreRow(
+                                        isLoading = s.loadingMore,
+                                        onClick = viewModel::loadMore
                                     )
                                 }
                             }
@@ -151,84 +296,162 @@ fun SearchScreen(
 }
 
 @Composable
-private fun Centered(text: String, error: Boolean = false) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = text,
-            color = if (error) Color(0xFFF2B8C6) else Color.White.copy(alpha = 0.6f),
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(20.dp),
-        )
-    }
-}
-
-@Composable
-private fun ResultRow(result: MusicSearchResult, onClick: () -> Unit) {
+private fun SearchResultRow(
+    result: MusicSearchResult,
+    isPlaying: Boolean,
+    isFavorite: Boolean,
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
+    val accent = LocalWearsicAccent.current
+    val isTrack = result is MusicSearchResult.Track
+    val title = result.title()
+    val subtitle = result.subtitle()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .clickableRow(onClick)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .heightIn(min = WearsicDimens.SheetRowMinHeight)
+            .clip(RoundedCornerShape(WearsicDimens.CardRadius))
+            .background(if (isPlaying) accent.copy(alpha = 0.16f) else WearsicGlassFill)
+            .border(1.dp, if (isPlaying) accent.copy(alpha = 0.5f) else WearsicGlassBorder, RoundedCornerShape(WearsicDimens.CardRadius))
+            .wearsicClickable(
+                enabled = isTrack,
+                pressedScale = 0.97f,
+                onClick = onPlay,
+                onLongClick = if (isTrack) onToggleFavorite else null,
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Thumb(result.thumbnail())
+        val thumb = result.thumbnail()
+        val context = LocalContext.current
+        if (thumb == null) {
+            Box(
+                modifier = Modifier
+                    .size(WearsicDimens.RowThumbnail)
+                    .clip(RoundedCornerShape(WearsicDimens.ArtRadius))
+                    .background(Color.White.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = WearsicTextMuted,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        } else {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(thumb.url)
+                    .size(120)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(WearsicDimens.RowThumbnail)
+                    .clip(RoundedCornerShape(WearsicDimens.ArtRadius))
+            )
+        }
         Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(Modifier.weight(1f)) {
             Text(
-                text = result.title(),
-                color = Color.White,
+                text = title,
+                color = if (isPlaying) accent else Color.White.copy(alpha = 0.94f),
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = result.subtitle(),
-                color = Color.White.copy(alpha = 0.55f),
+                text = if (isTrack) subtitle else "$subtitle — open on the YouTube app",
+                color = Color.White.copy(alpha = 0.60f),
                 fontSize = 11.sp,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (isTrack) {
+            Icon(
+                imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.MusicNote,
+                contentDescription = if (isFavorite) "Favorited" else null,
+                tint = if (isPlaying || isFavorite) accent else Color.White.copy(alpha = 0.30f),
+                modifier = Modifier
+                    .size(if (isFavorite) 15.dp else 12.dp)
+                    .padding(top = 0.dp)
             )
         }
     }
 }
 
 @Composable
-private fun Thumb(thumb: Thumbnail?) {
-    if (thumb == null) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF232027)),
-        )
-    } else {
-        AsyncImage(
-            model = thumb.url,
-            contentDescription = null,
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp)),
+private fun LoadMoreRow(
+    isLoading: Boolean,
+    onClick: () -> Unit,
+) {
+    val accent = LocalWearsicAccent.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 34.dp)
+            .clip(RoundedCornerShape(50))
+            .background(WearsicGlassFill)
+            .border(1.dp, WearsicGlassBorder, RoundedCornerShape(50))
+            .wearsicClickable(haptic = false, onClick = onClick)
+            .padding(vertical = 8.dp)
+    ) {
+        Text(
+            if (isLoading) "Loading more…" else "Show more",
+            color = accent,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
-private fun resultKey(r: MusicSearchResult): String = when (r) {
-    is MusicSearchResult.Track -> "t:${r.track.videoId}"
-    is MusicSearchResult.Artist -> "a:${r.artist.id ?: r.artist.name}"
-    is MusicSearchResult.Album -> "al:${r.album.id ?: r.album.title}"
-    is MusicSearchResult.Playlist -> "p:${r.playlist.id ?: r.playlist.title}"
-    else -> "u:${System.identityHashCode(r)}"
+@Composable
+private fun HintLine(
+    text: String,
+    isError: Boolean = false,
+    retry: (() -> Unit)? = null,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 22.dp, vertical = 14.dp)
+    ) {
+        Text(
+            text = text,
+            color = if (isError) WearsicError else Color.White.copy(alpha = 0.60f),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 15.sp
+        )
+        if (retry != null) {
+            Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.08f))
+                    .wearsicClickable(onClick = retry)
+                    .padding(horizontal = 18.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Retry",
+                    color = LocalWearsicAccent.current,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
 }
 
-private fun MusicSearchResult.thumbnail(): Thumbnail? = when (this) {
-    is MusicSearchResult.Track -> track.thumbnails.lastOrNull()
-    is MusicSearchResult.Artist -> artist.thumbnails.lastOrNull()
-    is MusicSearchResult.Album -> album.thumbnails.lastOrNull()
-    is MusicSearchResult.Playlist -> playlist.thumbnails.lastOrNull()
-    else -> null
-}
+// ── Extensions ────────────────────────────────────────────────────────────
 
 private fun MusicSearchResult.title(): String = when (this) {
     is MusicSearchResult.Track -> track.title
@@ -244,7 +467,6 @@ private fun MusicSearchResult.subtitle(): String = when (this) {
             if (i > 0) append(", ")
             append(a.name)
         }
-        track.album?.let { append(" • "); append(it.name) }
         track.durationMs?.let { append(" • "); append(formatDuration(it)) }
     }
     is MusicSearchResult.Artist -> artist.subscribers ?: "Artist"
@@ -253,13 +475,17 @@ private fun MusicSearchResult.subtitle(): String = when (this) {
     else -> ""
 }
 
+private fun MusicSearchResult.thumbnail(): Thumbnail? = when (this) {
+    is MusicSearchResult.Track -> track.thumbnails.lastOrNull()
+    is MusicSearchResult.Artist -> artist.thumbnails.lastOrNull()
+    is MusicSearchResult.Album -> album.thumbnails.lastOrNull()
+    is MusicSearchResult.Playlist -> playlist.thumbnails.lastOrNull()
+    else -> null
+}
+
 private fun formatDuration(ms: Long): String {
     val totalSec = ms / 1000
     val m = totalSec / 60
     val s = totalSec % 60
-    return "%d:%02d".format(m, s)
+    return String.format(Locale.US, "%d:%02d", m, s)
 }
-
-/** Minimal clickable modifier to avoid adding a dependency. */
-private fun Modifier.clickableRow(onClick: () -> Unit): Modifier =
-    this.clickable(onClick = onClick)
