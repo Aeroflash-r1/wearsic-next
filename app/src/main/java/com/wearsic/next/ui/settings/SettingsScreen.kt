@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -149,6 +150,16 @@ fun SettingsScreen(
                     sublabel = "Ticks on taps and scrub",
                     checked = WearsicPrefs.haptics,
                     onChange = WearsicPrefs::setHapticsEnabled,
+                )
+            }
+
+            item {
+                ToggleRow(
+                    icon = Icons.Rounded.Replay,
+                    label = "Bezel scroll direction",
+                    sublabel = "Invert the crown/bezel",
+                    checked = WearsicPrefs.rotaryInverted,
+                    onChange = WearsicPrefs::setRotaryDirection,
                 )
             }
 

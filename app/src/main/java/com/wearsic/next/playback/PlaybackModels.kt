@@ -39,6 +39,17 @@ fun PlaybackItem.Companion.from(track: TrackDto, stream: StreamDescriptor): Play
         stream = stream,
     )
 
+/** Builds a playback item from a search track alone (stream resolved lazily). */
+fun PlaybackItem.Companion.fromSearch(track: TrackDto): PlaybackItem =
+    PlaybackItem(
+        videoId = track.videoId,
+        title = track.title,
+        artists = track.artists,
+        album = track.album,
+        durationMs = track.durationMs,
+        thumbnails = track.thumbnails,
+    )
+
 /** Playback states exposed to the UI (throttled). */
 enum class PlaybackPhase {
     Idle,

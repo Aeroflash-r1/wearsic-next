@@ -207,6 +207,8 @@ class PlaybackController(
     private fun playCurrent() {
         val item = queueItems.getOrNull(currentIndex) ?: return
         _state.value = _state.value.copy(phase = PlaybackPhase.Resolving, item = item)
+        // Local history for the home screen's "Recently Played".
+        com.wearsic.next.ui.data.RecentStore.record(item)
         scope.launch {
             val descriptor = resolveOrRefresh(item)
             if (descriptor == null) {
@@ -252,6 +254,11 @@ class PlaybackController(
             return
         }
         if (c.isPlaying) c.pause() else c.play()
+    }
+
+    /** Used by the sleep timer to pause after N minutes. */
+    fun pause() {
+        controller?.pause()
     }
 
     fun skipNext() {
@@ -408,14 +415,18 @@ class PlaybackController(
 
     /**
      * Cheap position tick for the UI (no flood). Emissions are SKIPPED while
-     * nothing changes — a paused or idle player costs no state churn, which
-     * keeps the Compose pipeline (and the watch's CPU) asleep.
+     * nothing changes — and the POLL RATE drops to 3s while paused or idle
+     * (only the 500ms cadence is needed for the moving progress ring). A
+     * paused or idle player therefore costs almost nothing, keeping the
+     * watch's CPU asleep.
      */
     fun startPositionTicker() {
         scope.launch {
             while (true) {
-                delay(500)
-                val c = controller ?: continue
+                val c = controller ?: run { delay(3000); continue }
+                val active = c.isPlaying || _state.value.phase == PlaybackPhase.Buffering ||
+                    _state.value.phase == PlaybackPhase.Resolving
+                delay(if (active) 500 else 3000)
                 val position = c.currentPosition
                 val duration = if (c.duration > 0L) c.duration else _state.value.durationMs
                 val buffered = c.bufferedPosition

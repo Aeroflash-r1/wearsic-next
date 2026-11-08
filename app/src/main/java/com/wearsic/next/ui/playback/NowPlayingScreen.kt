@@ -252,7 +252,7 @@ fun NowPlayingScreen(
                             else -> ActionsPage(
                                 state = playbackState,
                                 isFavorite = track?.let { FavoritesStore.isFavorite(it.videoId) } == true,
-                                onToggleFavorite = { track?.let { FavoritesStore.toggle(it.videoId) } },
+                                onToggleFavorite = { track?.let { FavoritesStore.toggle(it) } },
                                 onNavigateToQueue = onNavigateToQueue,
                                 onNavigateToVolume = onNavigateToVolume,
                                 active = pageIndex == 1,

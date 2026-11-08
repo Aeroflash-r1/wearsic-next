@@ -16,13 +16,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,15 +58,17 @@ import com.wearsic.next.ui.theme.wearsicListContentPadding
 import com.wearsic.next.ui.util.wearsicClickable
 import com.wearsic.next.ui.util.wearsicEntrance
 import com.wearsic.next.ui.util.wearsicRotaryScroll
+import kotlinx.coroutines.delay
 
 /**
  * SOUND — the standalone equivalent of the original Wearsic VolumeScreen:
  * music-stream volume lives here, with the circular −/+ buttons and a
- * segmented bar. Updating the stream also flashes the system volume UI —
- * suppressed by using the same setStreamVolume call the framework accepts.
+ * segmented bar, plus a sleep timer (pause after N minutes).
  */
 @Composable
-fun VolumeScreen() {
+fun VolumeScreen(
+    onPausePlayback: () -> Unit = {},
+) {
     val context = LocalContext.current
     val audioManager = remember {
         context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
@@ -72,6 +78,26 @@ fun VolumeScreen() {
 
     var volume by remember { mutableIntStateOf(currentVolume(audioManager)) }
     var maxVolume by remember { mutableIntStateOf(audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)) }
+
+    // Sleep timer (minutes). 0 = off.
+    var sleepMinutes by remember { mutableIntStateOf(0) }
+    var sleepRemainingMs by remember { mutableLongStateOf(0L) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(sleepMinutes) {
+        if (sleepMinutes <= 0) {
+            sleepRemainingMs = 0L
+            return@LaunchedEffect
+        }
+        sleepRemainingMs = sleepMinutes * 60_000L
+        while (sleepRemainingMs > 0L) {
+            delay(1000)
+            sleepRemainingMs -= 1000L
+        }
+        sleepRemainingMs = 0L
+        sleepMinutes = 0
+        onPausePlayback()
+    }
+
     // Register to observe changes so the bar reflects wear-UI side effects.
     val receiver = remember {
         object : android.content.BroadcastReceiver() {
@@ -91,6 +117,12 @@ fun VolumeScreen() {
         val next = (volume + delta).coerceIn(0, maxVolume)
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
         volume = next
+    }
+
+    fun formatRemaining(ms: Long): String {
+        val totalMin = ms / 60_000
+        val sec = (ms % 60_000) / 1000
+        return "$totalMin:${sec.toString().padStart(2, '0')}"
     }
 
     ScreenScaffold(
@@ -187,6 +219,49 @@ fun VolumeScreen() {
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 2.dp)
                 )
+            }
+
+            item { WearsicSectionTitle("Sleep timer") }
+
+            item {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    listOf(0 to "Off", 15 to "15m", 30 to "30m", 60 to "60m").forEach { (mins, label) ->
+                        val selected = sleepMinutes == mins
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(CircleShape)
+                                .background(if (selected) accent else Color.White.copy(alpha = 0.10f))
+                                .border(1.dp, if (selected) accent else WearsicSurfaceBorder, CircleShape)
+                                .wearsicClickable(haptic = false) { sleepMinutes = mins }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                color = if (selected) Color(0xFF17161A) else Color.White.copy(alpha = 0.85f),
+                                fontSize = 11.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (sleepMinutes > 0) {
+                item {
+                    Text(
+                        text = "Pauses in ${formatRemaining(sleepRemainingMs)}",
+                        color = Color.White.copy(alpha = 0.55f),
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }

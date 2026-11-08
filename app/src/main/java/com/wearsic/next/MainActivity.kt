@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import com.wearsic.next.engine.RustEngine
 import com.wearsic.next.ui.WearsicNextApp
 import com.wearsic.next.ui.data.FavoritesStore
+import com.wearsic.next.ui.data.RecentStore
 import com.wearsic.next.ui.theme.WearsicPrefs
 
 class MainActivity : ComponentActivity() {
@@ -17,6 +18,7 @@ class MainActivity : ComponentActivity() {
         // Preference + favorites state must be backed BEFORE composition.
         WearsicPrefs.init(this)
         FavoritesStore.init(this)
+        RecentStore.init(this)
         setContent {
             WearsicNextApp()
         }

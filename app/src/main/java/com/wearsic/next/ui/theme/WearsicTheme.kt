@@ -114,14 +114,32 @@ object WearsicPrefs {
     var haptics: Boolean by mutableStateOf(true)
         private set
 
+    /** Invert the bezel/crown scroll direction (Settings > Bezel scroll). */
+    var rotaryInverted: Boolean by mutableStateOf(false)
+        private set
+
     /** Must be called before the first composition. */
     fun init(context: Context) {
         if (prefs != null) return
         prefs = context.getSharedPreferences("wearsic_next_prefs", Context.MODE_PRIVATE)
             .also { p ->
-                accentName = p.getString(KEY_ACCENT, "Lavender") ?: "Lavender"
+                // v2 (0.2.4+): reset any earlier accent pick back to the
+                // signature lavender so the app opens looking exactly like
+                // the original (users had selected darker accents and the
+                // whole UI read "off").
+                val version = p.getInt(KEY_VERSION, 0)
+                if (version < 2) {
+                    accentName = "Lavender"
+                    p.edit()
+                        .putInt(KEY_VERSION, 2)
+                        .putString(KEY_ACCENT, "Lavender")
+                        .apply()
+                } else {
+                    accentName = p.getString(KEY_ACCENT, "Lavender") ?: "Lavender"
+                }
                 rotateArtwork = p.getBoolean(KEY_ROTATE, true)
                 haptics = p.getBoolean(KEY_HAPTICS, true)
+                rotaryInverted = p.getBoolean(KEY_ROTARY, false)
             }
     }
 
@@ -140,6 +158,11 @@ object WearsicPrefs {
         prefs?.edit()?.putBoolean(KEY_HAPTICS, enabled)?.apply()
     }
 
+    fun setRotaryDirection(enabled: Boolean) {
+        rotaryInverted = enabled
+        prefs?.edit()?.putBoolean(KEY_ROTARY, enabled)?.apply()
+    }
+
     /** Resolves the persisted accent name to a colour; null resolves to artwork accent. */
     fun accentColorOrNull(): Color? = when {
         accentName == ACCENT_AUTO -> null
@@ -149,4 +172,6 @@ object WearsicPrefs {
     private const val KEY_ACCENT = "accentName"
     private const val KEY_ROTATE = "rotateArtwork"
     private const val KEY_HAPTICS = "haptics"
+    private const val KEY_ROTARY = "rotaryInverted"
+    private const val KEY_VERSION = "prefs_version"
 }

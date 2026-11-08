@@ -57,6 +57,8 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import com.wearsic.next.engine.MusicSearchResult
 import com.wearsic.next.engine.Thumbnail
+import com.wearsic.next.playback.PlaybackItem
+import com.wearsic.next.playback.fromSearch
 import com.wearsic.next.ui.components.WearsicScreenHeader
 import com.wearsic.next.ui.components.WearsicSearchShimmerRow
 import com.wearsic.next.ui.components.WearsicSongRow
@@ -275,7 +277,7 @@ fun SearchScreen(
                                     onPlay = { onResultSelected(result) },
                                     onToggleFavorite = {
                                         (result as? MusicSearchResult.Track)?.let {
-                                            FavoritesStore.toggle(it.track.videoId)
+                                            FavoritesStore.toggle(PlaybackItem.fromSearch(it.track))
                                         }
                                     }
                                 )

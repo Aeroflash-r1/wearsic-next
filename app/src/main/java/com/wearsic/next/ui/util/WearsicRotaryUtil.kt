@@ -39,7 +39,7 @@ fun Modifier.wearsicRotaryScroll(
     listState: ScalingLazyListState,
     focusRequester: FocusRequester = rememberActiveFocusRequester(),
     enabled: Boolean = true,
-    reverseDirection: Boolean = LocalRotaryDirectionInverted.current,
+    reverseDirection: Boolean = com.wearsic.next.ui.theme.WearsicPrefs.rotaryInverted,
 ): Modifier {
     LaunchedEffect(focusRequester, enabled) {
         if (!enabled) return@LaunchedEffect

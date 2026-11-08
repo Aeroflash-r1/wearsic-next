@@ -49,6 +49,7 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun togglePlayPause() = controller.togglePlayPause()
+    fun pause() = controller.pause()
     fun skipNext() = controller.skipNext()
     fun skipPrevious() = controller.skipPrevious()
     fun seekTo(ms: Long) = controller.seekTo(ms)

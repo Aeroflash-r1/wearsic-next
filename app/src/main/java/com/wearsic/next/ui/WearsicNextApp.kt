@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -56,10 +57,14 @@ import com.wearsic.next.playback.PlaybackViewModel
 import com.wearsic.next.ui.components.WearsicPrimaryPillButton
 import com.wearsic.next.ui.components.WearsicScreenHeader
 import com.wearsic.next.ui.components.WearsicSecondaryPillButton
+import com.wearsic.next.ui.components.WearsicSectionTitle
 import com.wearsic.next.ui.components.WearsicSettingsActionPill
+import com.wearsic.next.ui.components.WearsicSongRow
+import com.wearsic.next.ui.data.RecentStore
 import com.wearsic.next.ui.playback.NowPlayingScreen
 import com.wearsic.next.ui.search.SearchScreen
 import com.wearsic.next.ui.settings.SettingsScreen
+import com.wearsic.next.ui.screens.FavoritesScreen
 import com.wearsic.next.ui.screens.QueueScreen
 import com.wearsic.next.ui.screens.VolumeScreen
 import com.wearsic.next.ui.theme.LocalWearsicAccent
@@ -75,6 +80,7 @@ import com.wearsic.next.ui.theme.WearsicVibrantLavender
 import com.wearsic.next.ui.theme.watchScaled
 import com.wearsic.next.ui.theme.wearsicAccentContainer
 import com.wearsic.next.ui.theme.wearsicListContentPadding
+import com.wearsic.next.ui.theme.wearsicSecondaryText
 import com.wearsic.next.ui.util.ArtworkColors
 import com.wearsic.next.ui.util.wearsicClickable
 import com.wearsic.next.ui.util.wearsicEntrance
@@ -82,7 +88,7 @@ import com.wearsic.next.ui.util.wearsicRotaryScroll
 
 /** Screens of the app; a simple stack keeps cold-start light and navigation instant. */
 internal enum class Destination {
-    Home, Search, Player, Queue, Sound, Settings,
+    Home, Search, Player, Queue, Sound, Favorites, Settings,
 }
 
 private fun <T> SnapshotStateList<T>.push(item: T) {
@@ -152,7 +158,13 @@ fun WearsicNextApp(
                     viewModel = playbackViewModel,
                     onBack = { backStack.pop() },
                 )
-                Destination.Sound -> VolumeScreen()
+                Destination.Sound -> VolumeScreen(
+                    onPausePlayback = playbackViewModel::pause,
+                )
+                Destination.Favorites -> FavoritesScreen(
+                    viewModel = playbackViewModel,
+                    onBack = { backStack.pop() },
+                )
                 Destination.Settings -> SettingsScreen(
                     onBack = { backStack.pop() },
                 )
@@ -161,6 +173,7 @@ fun WearsicNextApp(
                     onSearch = { backStack.push(Destination.Search) },
                     onNowPlaying = { backStack.push(Destination.Player) },
                     onQueue = { backStack.push(Destination.Queue) },
+                    onFavorites = { backStack.push(Destination.Favorites) },
                     onSound = { backStack.push(Destination.Sound) },
                     onSettings = { backStack.push(Destination.Settings) },
                 )
@@ -181,12 +194,14 @@ private fun HomeScreen(
     onSearch: () -> Unit,
     onNowPlaying: () -> Unit,
     onQueue: () -> Unit,
+    onFavorites: () -> Unit,
     onSound: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val state by playbackViewModel.state.collectAsState()
     val listState = rememberScalingLazyListState()
     val hasSong = state.item != null && state.phase != PlaybackPhase.Error
+    val recent = RecentStore.items
 
     ScreenScaffold(scrollState = listState) { contentPadding ->
         ScalingLazyColumn(
@@ -246,6 +261,44 @@ private fun HomeScreen(
                         onClick = onSound,
                         modifier = Modifier.weight(1f)
                     )
+                }
+            }
+
+            item {
+                WearsicSecondaryPillButton(
+                    label = "Favorites",
+                    icon = Icons.Rounded.Favorite,
+                    onClick = onFavorites,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Recently Played — one-tap resume, like the original home.
+            if (recent.isNotEmpty()) {
+                item {
+                    WearsicSectionTitle(label = "Recently Played", trailing = {
+                        Text(
+                            text = "${recent.size} songs",
+                            color = wearsicSecondaryText(),
+                            fontSize = 10.sp
+                        )
+                    })
+                }
+                recent.take(4).forEach { track ->
+                    item(key = "recent_${track.videoId}") {
+                        WearsicSongRow(
+                            title = track.title,
+                            artist = track.artistLabel.ifBlank { "—" },
+                            artworkUrl = track.artworkUrl,
+                            onClick = {
+                                playbackViewModel.playTracks(
+                                    recent,
+                                    recent.indexOfFirst { it.videoId == track.videoId }
+                                )
+                                onNowPlaying()
+                            }
+                        )
+                    }
                 }
             }
 
