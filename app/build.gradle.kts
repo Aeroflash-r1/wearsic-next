@@ -78,11 +78,28 @@ android {
         versionName = "0.2.0"
     }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("wearsic-next.jks")
+            storePassword = "wearsicnext"
+            keyAlias = "wearsic"
+            keyPassword = "wearsicnext"
         }
     }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
+    experimentalProperties["android.experimental.artProfile"] = "off"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -111,7 +128,9 @@ android {
             // symbols here so AGP doesn't invoke the NDK's llvm-strip
             // (x86_64-only binary, unavailable on aarch64 hosts).
             keepDebugSymbols += "**/*.so"
-            useLegacyPackaging = false
+            // Legacy packaging keeps libs inline (AGP 9.1.1 arm64 quirk
+            // with the manifest when useLegacyPackaging=false).
+            useLegacyPackaging = true
         }
     }
 }
