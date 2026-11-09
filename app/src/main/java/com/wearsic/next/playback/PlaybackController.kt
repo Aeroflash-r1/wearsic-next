@@ -4,32 +4,49 @@ import android.content.Context
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import androidx.media3.common.util.UnstableApi
-import com.wearsic.next.engine.NetworkEngineException
+import com.wearsic.next.engine.Album
+import com.wearsic.next.engine.Artist
 import com.wearsic.next.engine.RustEngine
 import com.wearsic.next.engine.StreamDescriptor
+import com.wearsic.next.engine.Thumbnail
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlin.coroutines.suspendCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 
 /**
- * Bridges the Rust engine (Phase 5 resolution) and Media3 playback.
+ * Bridges the Rust engine (stream resolution) and Media3 playback.
  *
  * Owns the queue, resolves streams lazily, and recovers from expired streams
  * by asking Rust for a fresh descriptor once (bounded retry).
+ *
+ * Design notes that matter for feel and battery:
+ *  · The queue is the single source of truth. Shuffle and repeat reorder /
+ *    wrap OUR list — Media3 only ever holds the one item that is playing, so
+ *    its own shuffle/repeat would do nothing.
+ *  · The next track's descriptor is resolved in the background while the
+ *    current one plays. A skip therefore starts instantly instead of showing
+ *    "Resolving" and waiting on the network.
+ *  · Each play attempt carries a token; a resolution that lands after the
+ *    user already skipped elsewhere is dropped instead of clobbering state.
+ *  · Position lives in its own flow so a moving progress ring never
+ *    recomposes the player screen, and the ticker parks completely while the
+ *    UI is not visible (screen off) instead of polling the CPU awake.
  */
 @UnstableApi
 class PlaybackController(
@@ -40,9 +57,14 @@ class PlaybackController(
 
     private var controller: MediaController? = null
     private var connectJob: Job? = null
+    private var prefetchJob: Job? = null
 
     private val _state = MutableStateFlow(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
+
+    /** Elapsed position, ticked separately so the UI can stay draw-only. */
+    private val _positionMs = MutableStateFlow(0L)
+    val positionMs: StateFlow<Long> = _positionMs.asStateFlow()
 
     /** Queue snapshot for the Queue screen (emitted only on mutations). */
     private val _queue = MutableStateFlow<List<PlaybackItem>>(emptyList())
@@ -52,22 +74,43 @@ class PlaybackController(
     val queueIndex: StateFlow<Int> = _queueIndex.asStateFlow()
 
     private val queueItems = mutableListOf<PlaybackItem>()
+
+    /** Un-shuffled order, so turning shuffle off restores the real queue. */
+    private var baseOrder: List<PlaybackItem> = emptyList()
     private var currentIndex = -1
-    private var resumeAfterRefresh = false
+    private var shuffleEnabled = false
+    private var repeatMode = Player.REPEAT_MODE_OFF
+
+    /** Video id already refreshed once after a play failure (no retry loops). */
+    private var refreshedVideoId: String? = null
+
+    /** Bumped on every play attempt; stale resolutions compare against it. */
+    private var playToken = 0
 
     private val requestIds = AtomicLong(1000)
 
+    /** True while a screen is on; the position ticker parks when false. */
+    private val uiActive = MutableStateFlow(false)
+
     init {
+        // Show the last queue even when the service is gone (app killed, no
+        // playback): the snapshot is the queue of record.
+        restoreQueueSnapshot()
+        _queue.value = queueItems.toList()
+        _queueIndex.value = currentIndex
         connect()
     }
 
     private fun connect() {
         connectJob?.cancel()
         connectJob = scope.launch {
-            val token = SessionToken(context, android.content.ComponentName(context, WearsicPlaybackService::class.java))
+            val token = SessionToken(
+                context,
+                android.content.ComponentName(context, WearsicPlaybackService::class.java),
+            )
             val future = MediaController.Builder(context, token).buildAsync()
             // ListenableFuture (Guava) → suspend via coroutine.
-            val controller = suspendCoroutine<MediaController> { cont ->
+            val mediaController = suspendCoroutine<MediaController> { cont ->
                 future.addListener(
                     {
                         runCatching { future.get() }
@@ -77,13 +120,14 @@ class PlaybackController(
                     java.util.concurrent.Executor { r -> r.run() },
                 )
             }
-            this@PlaybackController.controller = controller
-            controller.addListener(this@PlaybackController)
+            this@PlaybackController.controller = mediaController
+            mediaController.addListener(this@PlaybackController)
             // A fresh controller starts with an Idle state even while the
             // service's player keeps playing (screen off/on, process restart,
             // re-entry from the launcher). Adopt the session's live item and
             // the persisted queue snapshot immediately.
-            hydrateFromSession(controller)
+            hydrateFromSession(mediaController)
+            if (uiActive.value) tickPosition(mediaController)
         }
     }
 
@@ -118,6 +162,7 @@ class PlaybackController(
                 .getString(QueueKey, null) ?: return
             val snap = itemJson.decodeFromString<QueueSnapshot>(text)
             queueItems.addAll(snap.items)
+            baseOrder = snap.items
             currentIndex = if (snap.items.isEmpty()) -1 else snap.index.coerceIn(0, snap.items.lastIndex)
         }
     }
@@ -137,13 +182,13 @@ class PlaybackController(
                 videoId = vid,
                 title = md.title?.toString().orEmpty(),
                 artists = md.artist?.toString()?.let { a ->
-                    listOf(com.wearsic.next.engine.Artist(name = a))
+                    listOf(Artist(name = a))
                 }.orEmpty(),
                 album = md.albumTitle?.toString()?.let { al ->
-                    com.wearsic.next.engine.Album(name = al)
+                    Album(name = al)
                 },
                 thumbnails = md.artworkUri?.toString()?.let { u ->
-                    listOf(com.wearsic.next.engine.Thumbnail(url = u))
+                    listOf(Thumbnail(url = u))
                 }.orEmpty(),
             )
         }
@@ -158,6 +203,7 @@ class PlaybackController(
             queueItems[found]
         } else {
             queueItems.add(fromSession)
+            baseOrder = baseOrder + fromSession
             currentIndex = queueItems.lastIndex
             fromSession
         }
@@ -172,17 +218,16 @@ class PlaybackController(
             c.playbackState == Player.STATE_READY -> PlaybackPhase.Paused
             else -> _state.value.phase.takeIf { it != PlaybackPhase.Idle } ?: PlaybackPhase.Paused
         }
+        _positionMs.value = c.currentPosition
         _state.value = _state.value.copy(
             phase = phase,
             item = item,
             isPlaying = c.isPlaying,
-            positionMs = c.currentPosition,
             durationMs = if (c.duration > 0L) c.duration else item.durationMs ?: 0L,
-            bufferedMs = c.bufferedPosition,
-            shuffleEnabled = c.shuffleModeEnabled,
-            repeatMode = c.repeatMode,
-            hasPrev = currentIndex > 0,
-            hasNext = currentIndex < queueItems.lastIndex,
+            shuffleEnabled = shuffleEnabled,
+            repeatMode = repeatMode,
+            hasPrev = QueueNavigation.previous(currentIndex, queueItems.size, repeatMode) != null,
+            hasNext = QueueNavigation.next(currentIndex, queueItems.size, repeatMode) != null,
             errorMessage = null,
         )
     }
@@ -191,57 +236,139 @@ class PlaybackController(
 
     fun play(items: List<PlaybackItem>, startIndex: Int) {
         if (items.isEmpty()) return
+        baseOrder = items
         queueItems.clear()
         queueItems.addAll(items)
         currentIndex = startIndex.coerceIn(0, items.lastIndex)
+        if (shuffleEnabled) reshuffleAroundCurrent()
         publishQueue()
         playCurrent()
     }
 
     fun playNext(item: PlaybackItem) {
-        queueItems.add(currentIndex + 1, item)
-        if (currentIndex + 1 == queueItems.lastIndex) _state.value = _state.value.copy(hasNext = true)
+        val insertAt = (currentIndex + 1).coerceIn(0, queueItems.size)
+        queueItems.add(insertAt, item)
+        baseOrder = baseOrder.toMutableList().apply { add(insertAt.coerceIn(0, size), item) }
         publishQueue()
     }
 
-    private fun playCurrent() {
-        val item = queueItems.getOrNull(currentIndex) ?: return
-        _state.value = _state.value.copy(phase = PlaybackPhase.Resolving, item = item)
-        // Local history for the home screen's "Recently Played".
-        com.wearsic.next.ui.data.RecentStore.record(item)
-        scope.launch {
-            val descriptor = resolveOrRefresh(item)
-            if (descriptor == null) {
-                _state.value = _state.value.copy(
-                    phase = PlaybackPhase.Error,
-                    errorMessage = "Could not resolve a playable stream.",
-                )
-                return@launch
-            }
-            val fresh = item.copy(stream = descriptor)
-                queueItems[currentIndex] = fresh
-            _state.value = _state.value.copy(
-                phase = PlaybackPhase.Preparing,
-                item = fresh,
-                durationMs = fresh.durationMs ?: 0L,
-            )
-            val mediaItem = toMediaItem(fresh)
-            val c = controller ?: return@launch
-            c.setMediaItems(listOf(mediaItem), 0, 0L)
-            c.prepare()
-            c.play()
+    /**
+     * Shuffle ON: keep the playing track first and shuffle everything after
+     * it. Shuffle OFF: restore the order the queue was created with.
+     */
+    fun setShuffle(enabled: Boolean) {
+        if (shuffleEnabled == enabled) return
+        shuffleEnabled = enabled
+        val playing = queueItems.getOrNull(currentIndex)
+        if (enabled) {
+            reshuffleAroundCurrent()
+        } else {
+            val byId = queueItems.associateBy { it.videoId }
+            val restored = baseOrder.mapNotNull { byId[it.videoId] }
+            val extras = queueItems.filter { item -> restored.none { it.videoId == item.videoId } }
+            queueItems.clear()
+            queueItems.addAll(restored + extras)
+            currentIndex = playing?.let { p ->
+                queueItems.indexOfFirst { it.videoId == p.videoId }
+            } ?: -1
+        }
+        publishQueue()
+        publishTransportFlags()
+        prefetchNext()
+    }
+
+    private fun reshuffleAroundCurrent() {
+        val playing = queueItems.getOrNull(currentIndex)
+        val rest = queueItems.filterIndexed { i, _ -> i != currentIndex }.shuffled()
+        queueItems.clear()
+        if (playing != null) {
+            queueItems.add(playing)
+            queueItems.addAll(rest)
+            currentIndex = 0
+        } else {
+            queueItems.addAll(rest)
+            currentIndex = if (queueItems.isEmpty()) -1 else 0
         }
     }
 
-    private suspend fun resolveOrRefresh(item: PlaybackItem): StreamDescriptor? {
-        item.stream?.let {
-            // Already resolved: trust it (10-min Rust cache covers expiry).
-            return it
+    private fun playCurrent() {
+        val index = currentIndex
+        val item = queueItems.getOrNull(index) ?: return
+        val token = ++playToken
+        refreshedVideoId = null
+        _state.update {
+            it.copy(
+                phase = PlaybackPhase.Resolving,
+                item = item,
+                isPlaying = false,
+                errorMessage = null,
+                durationMs = item.durationMs ?: 0L,
+                hasPrev = QueueNavigation.previous(currentIndex, queueItems.size, repeatMode) != null,
+                hasNext = QueueNavigation.next(currentIndex, queueItems.size, repeatMode) != null,
+            )
         }
-        return withContext(Dispatchers.IO) {
+        _positionMs.value = 0L
+        // Local history for the home screen's "Recently Played".
+        com.wearsic.next.ui.data.RecentStore.record(item)
+
+        scope.launch {
+            val descriptor = item.stream ?: resolve(item.videoId)
+            if (token != playToken) return@launch // user skipped elsewhere
+            if (descriptor == null) {
+                _state.update {
+                    it.copy(
+                        phase = PlaybackPhase.Error,
+                        errorMessage = "Could not resolve a playable stream.",
+                    )
+                }
+                return@launch
+            }
+            // The queue may have been edited while this resolved; write only
+            // if the slot still holds the same track.
+            if (queueItems.getOrNull(index)?.videoId != item.videoId) return@launch
+            val fresh = item.copy(stream = descriptor)
+            queueItems[index] = fresh
+            _state.update {
+                it.copy(
+                    phase = PlaybackPhase.Preparing,
+                    item = fresh,
+                    durationMs = fresh.durationMs ?: 0L,
+                )
+            }
+            val c = controller ?: return@launch
+            c.setMediaItem(toMediaItem(fresh))
+            c.prepare()
+            c.play()
+            // Resolve the following track while this one plays: the next skip
+            // is then network-free.
+            prefetchNext()
+        }
+    }
+
+    private suspend fun resolve(videoId: String): StreamDescriptor? =
+        withContext(Dispatchers.IO) {
             runCatching {
-                engine.resolveStream(item.videoId, requestIds.incrementAndGet())
+                engine.resolveStream(videoId, requestIds.incrementAndGet())
             }.getOrNull()
+        }
+
+    /**
+     * Warms the descriptor for the next queue entry. Runs at most one at a
+     * time, writes only if the entry is still unresolved, and never touches
+     * playback state — so a prefetch can never cause a stutter.
+     */
+    private fun prefetchNext() {
+        prefetchJob?.cancel()
+        val nextIndex = currentIndex + 1
+        if (nextIndex !in queueItems.indices) return
+        val target = queueItems[nextIndex]
+        if (target.stream != null) return
+        prefetchJob = scope.launch {
+            val descriptor = resolve(target.videoId) ?: return@launch
+            val index = queueItems.indexOfFirst { it.videoId == target.videoId }
+            if (index < 0 || queueItems[index].stream != null) return@launch
+            queueItems[index] = queueItems[index].copy(stream = descriptor)
+            _queue.value = queueItems.toList()
         }
     }
 
@@ -249,11 +376,17 @@ class PlaybackController(
 
     fun togglePlayPause() {
         val c = controller ?: return
-        if (_state.value.phase == PlaybackPhase.Error) {
-            retry()
-            return
+        when (_state.value.phase) {
+            PlaybackPhase.Error -> retry()
+            PlaybackPhase.Ended -> {
+                c.seekTo(0L)
+                _positionMs.value = 0L
+                c.play()
+            }
+            // Nothing loaded yet (fresh process + restored queue).
+            PlaybackPhase.Idle -> if (queueItems.isNotEmpty()) playCurrent()
+            else -> if (c.isPlaying) c.pause() else c.play()
         }
-        if (c.isPlaying) c.pause() else c.play()
     }
 
     /** Used by the sleep timer to pause after N minutes. */
@@ -262,45 +395,59 @@ class PlaybackController(
     }
 
     fun skipNext() {
-        if (currentIndex < queueItems.lastIndex) {
-            currentIndex++
+        val next = QueueNavigation.next(currentIndex, queueItems.size, repeatMode)
+        if (next != null) {
+            currentIndex = next
             publishQueueIndex()
             playCurrent()
         } else {
             controller?.pause()
+            _state.update { it.copy(phase = PlaybackPhase.Ended, isPlaying = false) }
         }
     }
 
     fun skipPrevious() {
-        if (currentIndex > 0) {
-            currentIndex--
+        val previous = QueueNavigation.previous(currentIndex, queueItems.size, repeatMode)
+        if (previous != null) {
+            currentIndex = previous
             publishQueueIndex()
             playCurrent()
         } else {
             controller?.seekTo(0L)
+            _positionMs.value = 0L
         }
     }
 
     /** Jump to a queue entry from the Queue screen. */
     fun playQueueIndex(index: Int) {
-        if (index in queueItems.indices && index != currentIndex) {
+        if (index !in queueItems.indices) return
+        val isTheLoadedTrack = index == currentIndex &&
+            _state.value.item?.videoId == queueItems[index].videoId &&
+            _state.value.phase != PlaybackPhase.Idle
+        if (isTheLoadedTrack) {
+            // Same track: restart it rather than re-resolving.
+            controller?.seekTo(0L)
+            _positionMs.value = 0L
+            controller?.play()
+        } else {
+            // Covers a restored queue with no player loaded (phase Idle), too.
             currentIndex = index
             publishQueueIndex()
             playCurrent()
-        } else if (index == currentIndex) {
-            controller?.seekTo(0L)
         }
     }
 
     /** Remove a track from the queue (never the currently playing one). */
     fun removeFromQueue(index: Int) {
         if (index in queueItems.indices && index != currentIndex) {
-            queueItems.removeAt(index)
+            val removed = queueItems.removeAt(index)
+            baseOrder = baseOrder.filterNot { it.videoId == removed.videoId }
             if (index < currentIndex) {
                 currentIndex--
                 publishQueueIndex()
             }
             publishQueue()
+            publishTransportFlags()
         }
     }
 
@@ -314,135 +461,187 @@ class PlaybackController(
         _queueIndex.value = currentIndex
     }
 
-    fun seekTo(positionMs: Long) {
-        controller?.seekTo(positionMs)
+    private fun publishTransportFlags() {
+        _state.update {
+            it.copy(
+                shuffleEnabled = shuffleEnabled,
+                repeatMode = repeatMode,
+                hasPrev = QueueNavigation.previous(currentIndex, queueItems.size, repeatMode) != null,
+                hasNext = QueueNavigation.next(currentIndex, queueItems.size, repeatMode) != null,
+            )
+        }
     }
 
-    fun setShuffle(enabled: Boolean) {
-        controller?.shuffleModeEnabled = enabled
+    fun seekTo(positionMs: Long) {
+        controller?.seekTo(positionMs)
+        // Immediate feedback: the ring must move on touch, not on the next tick.
+        _positionMs.value = positionMs
     }
 
     /** Re-attempts resolution + playback after a failure (user taps play). */
     fun retry() {
         if (_state.value.phase == PlaybackPhase.Error) {
-            resumeAfterRefresh = false
+            refreshedVideoId = null
             playCurrent()
         }
     }
 
     fun cycleRepeatMode() {
-        val c = controller ?: return
-        c.repeatMode = when (c.repeatMode) {
+        repeatMode = when (repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             else -> Player.REPEAT_MODE_OFF
         }
+        publishTransportFlags()
     }
 
     // --- Player.Listener ---------------------------------------------------
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        _state.value = _state.value.copy(
-            phase = if (isPlaying) PlaybackPhase.Playing else PlaybackPhase.Paused,
-            isPlaying = isPlaying,
-        )
+        val c = controller
+        val phase = when {
+            isPlaying -> PlaybackPhase.Playing
+            c?.playbackState == Player.STATE_BUFFERING -> PlaybackPhase.Buffering
+            c?.playbackState == Player.STATE_READY -> PlaybackPhase.Paused
+            else -> _state.value.phase
+        }
+        _state.update { it.copy(phase = phase, isPlaying = isPlaying) }
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-        val phase = when (playbackState) {
-            Player.STATE_BUFFERING -> PlaybackPhase.Buffering
-            Player.STATE_READY -> if (controller?.isPlaying == true) PlaybackPhase.Playing else PlaybackPhase.Paused
-            Player.STATE_ENDED -> PlaybackPhase.Ended
-            else -> PlaybackPhase.Idle
+        when (playbackState) {
+            Player.STATE_BUFFERING -> _state.update { it.copy(phase = PlaybackPhase.Buffering) }
+            Player.STATE_READY -> _state.update {
+                it.copy(
+                    phase = if (controller?.isPlaying == true) {
+                        PlaybackPhase.Playing
+                    } else {
+                        PlaybackPhase.Paused
+                    },
+                    durationMs = controller?.duration?.takeIf { d -> d > 0L } ?: it.durationMs,
+                )
+            }
+            Player.STATE_ENDED -> onTrackEnded()
+            // Transient player states must not clobber Resolving/Preparing/
+            // Error with Idle (that was the brief flicker on every skip).
+            else -> {
+                val phase = _state.value.phase
+                if (phase != PlaybackPhase.Error &&
+                    phase != PlaybackPhase.Resolving &&
+                    phase != PlaybackPhase.Preparing
+                ) {
+                    _state.update { it.copy(phase = PlaybackPhase.Idle) }
+                }
+            }
         }
-        _state.value = _state.value.copy(phase = phase)
-        if (phase == PlaybackPhase.Ended) skipNext()
+    }
+
+    /** Repeat one replays; otherwise advance, wrapping only with repeat-all. */
+    private fun onTrackEnded() {
+        if (repeatMode == Player.REPEAT_MODE_ONE) {
+            controller?.seekTo(0L)
+            _positionMs.value = 0L
+            controller?.play()
+            _state.update { it.copy(phase = PlaybackPhase.Playing, isPlaying = true) }
+            return
+        }
+        val next = QueueNavigation.next(currentIndex, queueItems.size, repeatMode)
+        if (next != null) {
+            currentIndex = next
+            publishQueueIndex()
+            playCurrent()
+        } else {
+            _state.update { it.copy(phase = PlaybackPhase.Ended, isPlaying = false) }
+            controller?.pause()
+        }
     }
 
     override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-        // Best-effort refresh-once for signed-URL failures (403/410).
+        // Best-effort refresh-once per track for signed-URL failures
+        // (403/410). A permanent failure surfaces instead of looping.
         val item = queueItems.getOrNull(currentIndex) ?: return
-        if (!resumeAfterRefresh) {
-            resumeAfterRefresh = true
-            scope.launch {
-                val fresh = withContext(Dispatchers.IO) {
-                    runCatching {
-                        engine.resolveStream(item.videoId, requestIds.incrementAndGet())
-                    }.getOrNull()
-                }
-                if (fresh != null) {
-                    val updated = item.copy(stream = fresh)
-                    queueItems[currentIndex] = updated
-                    controller?.setMediaItem(toMediaItem(updated), 0L)
-                    controller?.prepare()
-                    controller?.play()
-                    return@launch
-                }
-                _state.value = _state.value.copy(
+        if (refreshedVideoId == item.videoId) {
+            _state.update {
+                it.copy(
                     phase = PlaybackPhase.Error,
                     errorMessage = "Playback failed: ${error.errorCodeName}",
                 )
             }
-        } else {
-            _state.value = _state.value.copy(
-                phase = PlaybackPhase.Error,
-                errorMessage = "Playback failed: ${error.errorCodeName}",
-            )
+            return
         }
-    }
-
-    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        resumeAfterRefresh = false
+        refreshedVideoId = item.videoId
+        val token = playToken
+        scope.launch {
+            val fresh = resolve(item.videoId)
+            if (token != playToken) return@launch
+            if (fresh == null) {
+                _state.update {
+                    it.copy(
+                        phase = PlaybackPhase.Error,
+                        errorMessage = "Playback failed: ${error.errorCodeName}",
+                    )
+                }
+                return@launch
+            }
+            val updated = item.copy(stream = fresh)
+            queueItems[currentIndex] = updated
+            controller?.setMediaItem(toMediaItem(updated), 0L)
+            controller?.prepare()
+            controller?.play()
+        }
     }
 
     override fun onEvents(player: Player, events: Player.Events) {
-        // Track position at ~500ms granularity driven by UI polling instead of
-        // flooding state on every frame.
         if (events.contains(Player.EVENT_POSITION_DISCONTINUITY) ||
             events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)
         ) {
-            _state.value = _state.value.copy(
-                positionMs = player.currentPosition,
-                durationMs = player.duration,
-                bufferedMs = player.bufferedPosition,
-                hasPrev = currentIndex > 0,
-                hasNext = currentIndex < queueItems.lastIndex,
-                shuffleEnabled = player.shuffleModeEnabled,
-                repeatMode = player.repeatMode,
-            )
+            _state.update {
+                it.copy(
+                    durationMs = player.duration.takeIf { d -> d > 0L } ?: it.durationMs,
+                )
+            }
         }
+    }
+
+    // --- Position ticker ---------------------------------------------------
+
+    /** Called by the app shell: false when no UI is on screen. */
+    fun setUiActive(active: Boolean) {
+        uiActive.value = active
     }
 
     /**
      * Cheap position tick for the UI (no flood). Emissions are SKIPPED while
-     * nothing changes — and the POLL RATE drops to 3s while paused or idle
-     * (only the 500ms cadence is needed for the moving progress ring). A
-     * paused or idle player therefore costs almost nothing, keeping the
-     * watch's CPU asleep.
+     * nothing changes, and the cadence drops to 3s while paused or idle so a
+     * paused watch stays asleep. While no UI is visible the loop PARKS on the
+     * flow instead of polling — screen-off playback costs zero wakeups here.
      */
     fun startPositionTicker() {
         scope.launch {
             while (true) {
-                val c = controller ?: run { delay(3000); continue }
+                uiActive.first { it }
+                val c = controller
+                if (c == null) {
+                    delay(1000)
+                    continue
+                }
                 val active = c.isPlaying || _state.value.phase == PlaybackPhase.Buffering ||
-                    _state.value.phase == PlaybackPhase.Resolving
+                    _state.value.phase == PlaybackPhase.Resolving ||
+                    _state.value.phase == PlaybackPhase.Preparing
                 delay(if (active) 500 else 3000)
+                if (!uiActive.value) continue
                 val position = c.currentPosition
+                if (position != _positionMs.value) _positionMs.value = position
                 val duration = if (c.duration > 0L) c.duration else _state.value.durationMs
-                val buffered = c.bufferedPosition
-                val current = _state.value
-                if (current.positionMs != position ||
-                    current.durationMs != duration ||
-                    current.bufferedMs != buffered
-                ) {
-                    _state.value = current.copy(
-                        positionMs = position,
-                        durationMs = duration,
-                        bufferedMs = buffered,
-                    )
+                if (duration != _state.value.durationMs) {
+                    _state.update { it.copy(durationMs = duration) }
                 }
             }
         }
+    }
+
+    private fun tickPosition(c: MediaController) {
+        _positionMs.value = c.currentPosition
     }
 
     // --- Media item construction -------------------------------------------
@@ -459,8 +658,10 @@ class PlaybackController(
             .setTitle(item.title)
             .setArtist(item.artistLabel)
             .setAlbumTitle(item.albumLabel)
-            .setArtworkUri(android.net.Uri.parse(item.artworkUrl))
             .setExtras(extras)
+            .apply {
+                item.artworkUrl?.let { setArtworkUri(android.net.Uri.parse(it)) }
+            }
             .build()
         return MediaItem.Builder()
             .setMediaId(item.videoId)
@@ -471,6 +672,8 @@ class PlaybackController(
     }
 
     fun release() {
+        prefetchJob?.cancel()
+        connectJob?.cancel()
         controller?.removeListener(this)
         controller?.release()
         controller = null

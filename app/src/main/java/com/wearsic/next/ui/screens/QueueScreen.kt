@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
@@ -20,6 +21,7 @@ import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MusicNote
 import com.wearsic.next.playback.PlaybackItem
 import com.wearsic.next.playback.PlaybackPhase
@@ -27,12 +29,14 @@ import com.wearsic.next.playback.PlaybackViewModel
 import com.wearsic.next.ui.components.WearsicEmptyState
 import com.wearsic.next.ui.components.WearsicScreenHeader
 import com.wearsic.next.ui.components.WearsicSongRow
+import com.wearsic.next.ui.components.WearsicSongRowActionButton
 import com.wearsic.next.ui.playback.formatTime
 import com.wearsic.next.ui.theme.LocalWearsicAccent
 import com.wearsic.next.ui.theme.WearsicTextMuted
 import com.wearsic.next.ui.theme.WearsicTextPrimary
 import com.wearsic.next.ui.theme.wearsicListContentPadding
 import com.wearsic.next.ui.util.wearsicRotaryScroll
+import com.wearsic.next.ui.util.wearsicEntrance
 
 /**
  * QUEUE — the now-running list. Jumps on tap; shows the live track with the
@@ -56,6 +60,7 @@ fun QueueScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .wearsicEntrance()
                 .wearsicRotaryScroll(listState),
             contentPadding = wearsicListContentPadding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -74,7 +79,8 @@ fun QueueScreen(
                         onClick = {
                             viewModel.playQueueIndex(index)
                             onBack()
-                        }
+                        },
+                        onRemove = { viewModel.removeFromQueue(index) },
                     )
                 }
             }
@@ -87,6 +93,7 @@ private fun QueueRow(
     item: PlaybackItem,
     isCurrent: Boolean,
     onClick: () -> Unit,
+    onRemove: () -> Unit,
 ) {
     val accent = LocalWearsicAccent.current
     WearsicSongRow(
@@ -97,12 +104,24 @@ private fun QueueRow(
         titleColor = if (isCurrent) accent else WearsicTextPrimary,
         artistColor = if (isCurrent) accent.copy(alpha = 0.8f) else WearsicTextPrimary.copy(alpha = 0.8f),
         trailing = {
-            item.durationMs?.takeIf { it > 0L }?.let { ms ->
-                Text(
-                    text = formatTime(ms),
-                    color = WearsicTextMuted,
-                    fontSize = 10.sp
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                item.durationMs?.takeIf { it > 0L }?.let { ms ->
+                    Text(
+                        text = formatTime(ms),
+                        color = WearsicTextMuted,
+                        fontSize = 10.sp
+                    )
+                }
+                // The playing track cannot be removed from its own queue.
+                if (!isCurrent) {
+                    WearsicSongRowActionButton(
+                        icon = Icons.Rounded.Close,
+                        contentDescription = "Remove from queue",
+                        onClick = onRemove,
+                        tint = WearsicTextMuted,
+                        visualSize = 14.dp,
+                    )
+                }
             }
         }
     )

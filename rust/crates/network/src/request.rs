@@ -35,6 +35,10 @@ pub struct Request {
     /// Per-request retry override; None = config default.
     #[serde(default)]
     pub max_attempts: Option<u32>,
+    /// Per-request response cap override; None = config default.
+    /// Clamped to an absolute ceiling by the client.
+    #[serde(default)]
+    pub max_response_bytes: Option<usize>,
     /// Whether the request is idempotent (retryable). GET/HEAD are
     /// idempotent by default; POST only when explicitly marked.
     #[serde(default)]
@@ -51,6 +55,7 @@ impl Request {
             body: None,
             timeout_ms: None,
             max_attempts: None,
+            max_response_bytes: None,
             idempotent: true,
         }
     }
@@ -76,6 +81,11 @@ impl Request {
 
     pub fn with_timeout(mut self, ms: u64) -> Self {
         self.timeout_ms = Some(ms);
+        self
+    }
+
+    pub fn with_max_response_bytes(mut self, bytes: usize) -> Self {
+        self.max_response_bytes = Some(bytes);
         self
     }
 }

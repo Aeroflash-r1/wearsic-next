@@ -2,6 +2,7 @@ package com.wearsic.next.ui.playback
 
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -93,6 +94,7 @@ import androidx.wear.compose.material3.Text
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.util.Locale
+import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -159,25 +161,6 @@ fun NowPlayingScreen(
         track?.durationMs ?: 0L
     }
 
-    val progressTarget = if (durationMs > 0L) {
-        (playbackState.positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-
-    // Discrete 500ms position ticks become a continuous sweep by a linear
-    // tween of the same length — read in the DRAW phase by the ring and the
-    // disc, so ticks never recompose the screen.
-    val animatedProgress = key(track?.videoId) {
-        animateFloatAsState(
-            targetValue = progressTarget,
-            animationSpec = tween(
-                durationMillis = if (playbackState.isPlaying && !playbackState.isBuffering) 500 else 0,
-                easing = LinearEasing
-            ),
-            label = "playerProgress"
-        )
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
@@ -240,7 +223,7 @@ fun NowPlayingScreen(
                                 item = track,
                                 state = playbackState,
                                 durationMs = durationMs,
-                                progress = animatedProgress,
+                                positionFlow = viewModel.positionMs,
                                 onTogglePlayPause = viewModel::togglePlayPause,
                                 onSkipPrevious = viewModel::skipPrevious,
                                 onSkipNext = viewModel::skipNext,
@@ -310,7 +293,7 @@ private fun NowPlayingPage(
     item: PlaybackItem?,
     state: PlaybackUiState,
     durationMs: Long,
-    progress: State<Float>,
+    positionFlow: StateFlow<Long>,
     onTogglePlayPause: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
@@ -342,7 +325,9 @@ private fun NowPlayingPage(
                 ArtworkDisc(
                     artworkUrl = item?.artworkUrl,
                     hasTrack = hasTrack,
-                    progress = progress,
+                    positionFlow = positionFlow,
+                    durationMs = durationMs,
+                    playing = state.phase == PlaybackPhase.Playing,
                     colors = colors,
                     size = discSize,
                     rotateArtwork = rotateArtwork,
@@ -397,37 +382,55 @@ private fun NowPlayingPage(
             // One line: artist · elapsed/total. The time segment is dropped
             // when no duration is known; a blank artist never leaves a
             // dangling "·"; a failure turns the line into the retry hint.
-            val subtitle = when {
-                item == null -> "Pick a song from Search"
-                state.phase == PlaybackPhase.Error ->
-                    state.errorMessage?.takeIf { it.isNotBlank() }
-                        ?: "Playback failed — tap play to retry"
-                else -> listOfNotNull(
-                    item.artistLabel
-                        .split(", ")
-                        .firstOrNull()
-                        ?.takeIf { it.isNotBlank() },
-                    if (durationMs > 0L) {
-                        "${formatTime(state.positionMs)} / ${formatTime(durationMs)}"
-                    } else {
-                        null
-                    }
-                ).joinToString(" · ")
-            }
+            // The clock is its own composable reading its own flow, so each
+            // 500ms tick recomposes THAT text only — not the page.
+            val subtitleColor = Color.White.copy(alpha = 0.70f)
+            val subtitleModifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 3.dp)
+                .wearsicEntrance(delayMillis = 90, fromScale = 0.98f, riseDp = 6f)
 
-            Text(
-                text = subtitle,
-                color = Color.White.copy(alpha = 0.70f),
-                fontSize = 11.sp,
-                lineHeight = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 3.dp)
-                    .wearsicEntrance(delayMillis = 90, fromScale = 0.98f, riseDp = 6f)
-            )
+            when {
+                item == null -> SubtitleText("Pick a song from Search", subtitleColor, subtitleModifier)
+                state.phase == PlaybackPhase.Error -> SubtitleText(
+                    state.errorMessage?.takeIf { it.isNotBlank() }
+                        ?: "Playback failed — tap play to retry",
+                    subtitleColor,
+                    subtitleModifier
+                )
+                else -> Row(
+                    modifier = subtitleModifier,
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val artist = item.artistLabel.split(", ").firstOrNull()
+                        ?.takeIf { it.isNotBlank() }
+                    if (artist != null) {
+                        Text(
+                            text = artist,
+                            color = subtitleColor,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
+                    if (durationMs > 0L) {
+                        if (artist != null) {
+                            Text(
+                                text = " · ",
+                                color = subtitleColor,
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp,
+                                maxLines = 1
+                            )
+                        }
+                        PlaybackTimeLabel(positionFlow, durationMs, subtitleColor)
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.weight(1f))
 
@@ -446,6 +449,36 @@ private fun NowPlayingPage(
     }
 }
 
+@Composable
+private fun SubtitleText(text: String, color: Color, modifier: Modifier) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        modifier = modifier,
+    )
+}
+
+/**
+ * "elapsed / total" — the only text that changes on a position tick, so it
+ * lives in its own composable and recomposes alone.
+ */
+@Composable
+private fun PlaybackTimeLabel(positionFlow: StateFlow<Long>, durationMs: Long, color: Color) {
+    val position by positionFlow.collectAsState()
+    Text(
+        text = "${formatTime(position)} / ${formatTime(durationMs)}",
+        color = color,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        maxLines = 1,
+    )
+}
+
 /**
  * The artwork disc: radial accent halo behind it (depth without a blur
  * shader), the ring progress drawn in the DRAW phase, and the artwork
@@ -457,13 +490,45 @@ private fun NowPlayingPage(
 private fun ArtworkDisc(
     artworkUrl: String?,
     hasTrack: Boolean,
-    progress: State<Float>,
+    positionFlow: StateFlow<Long>,
+    durationMs: Long,
+    playing: Boolean,
     colors: ArtworkColors,
     size: Dp,
     modifier: Modifier = Modifier,
     rotateArtwork: Boolean = true,
 ) {
     val ringStroke = 3f
+
+    // Continuously animated progress, driven OFF the composition: the flow is
+    // collected in a coroutine and the only State read is by the draw phase /
+    // graphics layer. A 500ms tick therefore costs a repaint, never a
+    // recomposition of the page.
+    val progressAnim = remember { Animatable(0f) }
+    LaunchedEffect(positionFlow, durationMs, playing) {
+        if (durationMs <= 0L) {
+            progressAnim.snapTo(0f)
+            return@LaunchedEffect
+        }
+        fun fraction(pos: Long): Float =
+            (pos.toFloat() / durationMs).coerceIn(0f, 1f)
+        // Land on the real position first (opening the screen, scrubbing,
+        // resuming) instead of sweeping from wherever the ring was.
+        progressAnim.snapTo(fraction(positionFlow.value))
+        if (!playing) return@LaunchedEffect
+        positionFlow.collect { pos ->
+            val target = fraction(pos)
+            // A big jump (scrub / track change) snaps; normal play advances
+            // linearly over one tick so the ring moves at real speed.
+            if (kotlin.math.abs(target - progressAnim.value) > 0.2f) {
+                progressAnim.snapTo(target)
+            } else {
+                progressAnim.animateTo(target, tween(500, easing = LinearEasing))
+            }
+        }
+    }
+    // `asState()` is remembered: reading it happens in draw/graphicsLayer.
+    val progress: State<Float> = remember(progressAnim) { progressAnim.asState() }
     val context = LocalContext.current
     val request = remember(context, artworkUrl) {
         ImageRequest.Builder(context)

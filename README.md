@@ -4,9 +4,25 @@ A standalone, battery-first Wear OS music streaming application.
 
 **One APK. One watch. One embedded Rust engine. No external backend.**
 
-> **Status: Phase 2 in progress.** Phase 1 audit complete (see `docs/`).
-> Phase 2 establishes the project foundation: Wear OS app skeleton, Rust
-> engine + JNI bridge, minimal engine-status UI.
+> **Status: Phase 6 complete, plus UI/functionality and engine-browse rounds.**
+> Search, album/playlist/artist browse, stream resolution and Media3 playback
+> are wired end to end through the embedded Rust engine; 40/40 JVM tests pass
+> (including live InnerTube search/resolve/browse) and the Rust workspace tests
+> pass. The UI ports the stable Wearsic 1.9.48 screens for the 44 mm round face
+> and adds engine-backed browse pages (cover/header, play-all, tracks, artist
+> albums, continuation/load-more).
+>
+> The playback core drives its own queue: shuffle and repeat actually reorder /
+> wrap it, tapping a search result queues the visible list or opens a browse
+> page, the next track is prefetched for instant skips, and the position ticker
+> parks while the screen is off.
+>
+> Still missing vs. original (and not faked): lyrics; downloads/offline playback
+> and storage management (original was server-dependent); local playlist
+> create/list/detail management; recommendations/radio (no real engine-backed
+> source verified — live radio/browse params were unusable, so no invented
+> data). Wear tile is out of scope for this port. See
+> `docs/FEATURE_PARITY_MATRIX.md` for per-feature status.
 
 ## Layout
 
@@ -28,6 +44,24 @@ wearsic-next/
 
 See `docs/BUILD_INSTRUCTIONS.md` for prerequisites and command details.
 
+## Release signing
+
+Credentials are never stored in the build script or the repository. Each value
+is read from the environment first, then from `keystore.properties` in the
+project root (gitignored):
+
+```properties
+storeFile=wearsic-next.jks
+storePassword=…
+keyAlias=wearsic
+keyPassword=…
+```
+
+Equivalent environment variables: `WEARSIC_KEYSTORE_FILE`,
+`WEARSIC_KEYSTORE_PASSWORD`, `WEARSIC_KEY_ALIAS`, `WEARSIC_KEY_PASSWORD`.
+If none are configured, `assembleRelease` still runs (R8 + lint) but produces
+an unsigned APK.
+
 ## Docs
 
 - `docs/EXISTING_WEARSIC_AUDIT.md` — Phase 1 audit of the original Wearsic.
@@ -38,3 +72,6 @@ See `docs/BUILD_INSTRUCTIONS.md` for prerequisites and command details.
 - `docs/JNI_INTERFACE.md` — the Kotlin↔Rust JNI contract.
 - `docs/BUILD_INSTRUCTIONS.md` — exact build commands.
 - `docs/PHASE_2_TEST_REPORT.md` — Phase 2 verification truth.
+- `docs/PHASE_3_NETWORK_ARCHITECTURE.md` … `docs/PHASE_6_TEST_REPORT.md` —
+  per-phase architecture, performance and verification notes.
+- `docs/MEDIA3_INTEGRATION.md` — playback service/controller wiring.

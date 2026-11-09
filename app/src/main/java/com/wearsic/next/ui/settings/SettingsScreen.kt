@@ -50,6 +50,7 @@ import com.wearsic.next.ui.theme.WearsicTextMuted
 import com.wearsic.next.ui.theme.wearsicListContentPadding
 import com.wearsic.next.ui.util.wearsicClickable
 import com.wearsic.next.ui.util.wearsicRotaryScroll
+import com.wearsic.next.ui.util.wearsicEntrance
 
 /**
  * Settings — deliberately has NO server URL/API key configuration: Wearsic
@@ -71,6 +72,7 @@ fun SettingsScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .wearsicEntrance()
                 .wearsicRotaryScroll(listState),
             contentPadding = wearsicListContentPadding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(6.dp),

@@ -15,7 +15,8 @@ use innertube::parser::{collect_renderers, find_string_deep, get_array, get_obje
 use serde_json::Value;
 
 use crate::models::{
-    Album, AlbumResult, Artist, ArtistResult, MusicSearchResult, PlaylistResult, Thumbnail, Track,
+    Album, AlbumResult, Artist, ArtistResult, BrowsePage, MusicSearchResult, PlaylistResult,
+    Thumbnail, Track,
 };
 
 /// Filters are client-side views in Wearsic Next: the InnerTube search
@@ -56,6 +57,44 @@ fn parse_duration_to_ms(text: &str) -> Option<i64> {
         _ => return None,
     };
     Some(seconds * 1000)
+}
+
+/// Joins a `{ runs: [...] }` or `{ simpleText: ... }` text object.
+fn text_of(value: &Value) -> Option<String> {
+    if let Some(s) = get_str(value, "simpleText") {
+        let t = s.trim();
+        return if t.is_empty() { None } else { Some(t.to_string()) };
+    }
+    let runs = get_array(value, "runs");
+    if runs.is_empty() {
+        return None;
+    }
+    let joined: String = runs.iter().filter_map(|r| get_str(r, "text")).collect();
+    let t = joined.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+/// Album/playlist rows put the duration in `fixedColumns`, not in the
+/// subtitle runs (verified live on YTM browse pages).
+fn fixed_column_duration(renderer: &Value) -> Option<i64> {
+    get_array(renderer, "fixedColumns").into_iter().find_map(|col| {
+        let fixed = get_object(&col, "musicResponsiveListItemFixedColumnRenderer")?;
+        let text = get_object(&fixed, "text")?;
+        text_of(&text).and_then(|t| parse_duration_to_ms(&t))
+    })
+}
+
+fn row_duration(renderer: &Value, subtitle_texts: &[String]) -> Option<i64> {
+    subtitle_texts
+        .iter()
+        .rev()
+        .find(|t| matches_duration(t))
+        .and_then(|t| parse_duration_to_ms(t))
+        .or_else(|| fixed_column_duration(renderer))
 }
 
 fn matches_duration(text: &str) -> bool {
@@ -150,11 +189,7 @@ pub fn parse_item(renderer: &Value) -> Option<MusicSearchResult> {
         if let Some(video_id) = get_str(watch, "videoId") {
             let content = strip_type_label(&texts);
             let artist = content.iter().find(|t| !matches_duration(t)).cloned();
-            let duration_ms = content
-                .iter()
-                .rev()
-                .find(|t| matches_duration(t))
-                .and_then(|t| parse_duration_to_ms(t));
+            let duration_ms = row_duration(renderer, &content);
             let album = sub_runs.iter().find(|r| {
                 r.get("navigationEndpoint")
                     .and_then(|n| n.get("browseEndpoint"))
@@ -193,11 +228,7 @@ pub fn parse_item(renderer: &Value) -> Option<MusicSearchResult> {
     if let Some(video_id) = video_id {
         let content = strip_type_label(&texts);
         let artist = content.iter().find(|t| !matches_duration(t)).cloned();
-        let duration_ms = content
-            .iter()
-            .rev()
-            .find(|t| matches_duration(t))
-            .and_then(|t| parse_duration_to_ms(t));
+        let duration_ms = row_duration(renderer, &content);
         return Some(MusicSearchResult::Track(Track {
             video_id,
             title,
@@ -283,6 +314,170 @@ pub fn parse_search_response(raw: &Value, limit: usize) -> Vec<MusicSearchResult
         }
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// Browse pages (album / playlist / artist)
+// ---------------------------------------------------------------------------
+
+/// Thumbnails under `<key>.musicThumbnailRenderer.thumbnail.thumbnails`.
+fn thumbnails_at(value: &Value, key: &str) -> Vec<Thumbnail> {
+    get_object(value, key)
+        .and_then(|t| get_object(&t, "musicThumbnailRenderer"))
+        .and_then(|t| get_object(&t, "thumbnail"))
+        .map(|t| {
+            get_array(&t, "thumbnails")
+                .into_iter()
+                .filter_map(|el| {
+                    let url = get_str(&el, "url")?.to_string();
+                    let width = el.get("width").and_then(Value::as_i64);
+                    let height = el.get("height").and_then(Value::as_i64);
+                    Some(Thumbnail { url, width, height })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// First header renderer the page carries. Albums/playlists use the
+/// responsive header, artist pages use the immersive one.
+fn find_header(raw: &Value) -> Option<Value> {
+    for key in [
+        "musicResponsiveHeaderRenderer",
+        "musicDetailHeaderRenderer",
+        "musicImmersiveHeaderRenderer",
+    ] {
+        let mut found = Vec::new();
+        collect_renderers(raw, key, &mut found);
+        if let Some(header) = found.first() {
+            return Some((*header).clone());
+        }
+    }
+    None
+}
+
+/// Parses a `musicTwoRowItemRenderer` card into an album result. Cards of
+/// other kinds (playlists, videos) are ignored.
+fn parse_two_row_album(item: &Value) -> Option<AlbumResult> {
+    let browse = item.get("navigationEndpoint")?.get("browseEndpoint")?;
+    let page_type = browse
+        .get("browseEndpointContextSupportedConfigs")
+        .and_then(|c| c.get("browseEndpointContextMusicConfig"))
+        .and_then(|c| c.get("pageType"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let id = get_str(browse, "browseId")?;
+    if page_type != "MUSIC_PAGE_TYPE_ALBUM" && !id.starts_with("MPREb") {
+        return None;
+    }
+    let title = get_object(item, "title").and_then(|t| text_of(&t))?;
+    let subtitle = get_object(item, "subtitle")
+        .map(|s| plain_text(&get_array(&s, "runs")))
+        .unwrap_or_default();
+    let content = strip_type_label(&subtitle);
+    Some(AlbumResult {
+        id: Some(id.to_string()),
+        title,
+        artist: content.first().cloned(),
+        year: content.get(1).cloned(),
+        thumbnails: thumbnails_at(item, "thumbnailRenderer"),
+    })
+}
+
+/// Continuation token of the first track shelf that has one. Artist pages
+/// also carry carousel continuations; only the song list matters here.
+fn shelf_continuation(raw: &Value) -> Option<String> {
+    let mut shelves = Vec::new();
+    collect_renderers(raw, "musicShelfRenderer", &mut shelves);
+    for shelf in shelves {
+        let mut rows = Vec::new();
+        collect_renderers(shelf, "musicResponsiveListItemRenderer", &mut rows);
+        if rows.is_empty() {
+            continue;
+        }
+        let mut items = Vec::new();
+        collect_renderers(shelf, "continuationItemRenderer", &mut items);
+        for item in items {
+            if let Some(token) = item
+                .get("continuationEndpoint")
+                .and_then(|e| e.get("continuationCommand"))
+                .and_then(|c| c.get("token"))
+                .and_then(Value::as_str)
+            {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Parses an album, playlist or artist browse response into one page.
+pub fn parse_browse_response(raw: &Value, limit: usize) -> BrowsePage {
+    let header = find_header(raw);
+    let title = header
+        .as_ref()
+        .and_then(|h| get_object(h, "title"))
+        .and_then(|t| text_of(&t))
+        .unwrap_or_default();
+    let subtitle = header
+        .as_ref()
+        .and_then(|h| get_object(h, "subtitle"))
+        .and_then(|t| text_of(&t));
+    let strapline = header
+        .as_ref()
+        .and_then(|h| get_object(h, "straplineTextOne"))
+        .and_then(|t| text_of(&t));
+    let second_subtitle = header
+        .as_ref()
+        .and_then(|h| get_object(h, "secondSubtitle"))
+        .and_then(|t| text_of(&t));
+    let thumbnails = header
+        .as_ref()
+        .map(|h| thumbnails_at(h, "thumbnail"))
+        .unwrap_or_default();
+
+    let mut renderers = Vec::new();
+    collect_renderers(raw, "musicResponsiveListItemRenderer", &mut renderers);
+    let mut tracks = Vec::new();
+    let mut seen_tracks = std::collections::HashSet::new();
+    for renderer in renderers {
+        if tracks.len() >= limit {
+            break;
+        }
+        if let Some(MusicSearchResult::Track(track)) = parse_item(renderer) {
+            if seen_tracks.insert(track.video_id.clone()) {
+                tracks.push(track);
+            }
+        }
+    }
+
+    let mut cards = Vec::new();
+    collect_renderers(raw, "musicTwoRowItemRenderer", &mut cards);
+    let mut albums = Vec::new();
+    let mut seen_albums = std::collections::HashSet::new();
+    for card in cards {
+        if albums.len() >= limit {
+            break;
+        }
+        if let Some(album) = parse_two_row_album(card) {
+            let key = album.id.clone().unwrap_or_else(|| album.title.clone());
+            if seen_albums.insert(key) {
+                albums.push(album);
+            }
+        }
+    }
+
+    BrowsePage {
+        title,
+        subtitle,
+        strapline,
+        second_subtitle,
+        thumbnails,
+        tracks,
+        albums,
+        continuation: shelf_continuation(raw),
+    }
 }
 
 /// Extracts the continuation token from a raw response.
@@ -434,5 +629,117 @@ mod tests {
         assert!(parse_item(&json!({"flexColumns": []})).is_none());
         assert!(parse_item(&json!({})).is_none());
         assert!(parse_item(&json!({"flexColumns": [1, 2]})).is_none());
+    }
+
+    #[test]
+    fn browse_album_page_parses_header_tracks_and_cards() {
+        // Shape mirrored from a live YTM album browse response.
+        let raw = json!({
+            "contents": {"twoColumnBrowseResultsRenderer": {"tabs": [{"tabRenderer": {"content": {"sectionListRenderer": {"contents": [
+                {"musicResponsiveHeaderRenderer": {
+                    "title": {"runs": [{"text": "Parachutes"}]},
+                    "subtitle": {"runs": [{"text": "Album"}, {"text": " • "}, {"text": "2000"}]},
+                    "straplineTextOne": {"runs": [{"text": "Coldplay"}]},
+                    "secondSubtitle": {"runs": [{"text": "10 songs"}, {"text": " • "}, {"text": "42 minutes"}]},
+                    "thumbnail": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
+                        {"url": "http://x/a.jpg", "width": 544, "height": 544}
+                    ]}}}
+                }},
+                {"musicShelfRenderer": {"contents": [
+                    {"musicResponsiveListItemRenderer": {
+                        "flexColumns": [
+                            {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Don't Panic"}]}}},
+                            {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Coldplay"}]}}}
+                        ],
+                        "fixedColumns": [{"musicResponsiveListItemFixedColumnRenderer": {"text": {"runs": [{"text": "2:17"}]}}}],
+                        "playlistItemData": {"videoId": "2XqpXmhM1Fc"}
+                    }},
+                    {"continuationItemRenderer": {"continuationEndpoint": {"continuationCommand": {"token": "CONT_TOKEN_123456"}}}}
+                ]}},
+                {"musicCarouselShelfRenderer": {"contents": [
+                    {"musicTwoRowItemRenderer": {
+                        "title": {"runs": [{"text": "A Rush of Blood"}]},
+                        "subtitle": {"runs": [{"text": "Album"}, {"text": " • "}, {"text": "Coldplay"}, {"text": " • "}, {"text": "2002"}]},
+                        "thumbnailRenderer": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
+                            {"url": "http://x/b.jpg"}
+                        ]}}},
+                        "navigationEndpoint": {"browseEndpoint": {
+                            "browseId": "MPREb_other",
+                            "browseEndpointContextSupportedConfigs": {"browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_ALBUM"}}
+                        }}
+                    }}
+                ]}}
+            ]}}}}]}}
+        });
+
+        let page = parse_browse_response(&raw, 300);
+        assert_eq!(page.title, "Parachutes");
+        assert_eq!(page.subtitle.as_deref(), Some("Album • 2000"));
+        assert_eq!(page.strapline.as_deref(), Some("Coldplay"));
+        assert_eq!(page.second_subtitle.as_deref(), Some("10 songs • 42 minutes"));
+        assert_eq!(page.thumbnails.len(), 1);
+
+        assert_eq!(page.tracks.len(), 1);
+        assert_eq!(page.tracks[0].video_id, "2XqpXmhM1Fc");
+        assert_eq!(page.tracks[0].title, "Don't Panic");
+        assert_eq!(page.tracks[0].artists[0].name, "Coldplay");
+        // Duration comes from fixedColumns on browse pages.
+        assert_eq!(page.tracks[0].duration_ms, Some(137_000));
+
+        assert_eq!(page.albums.len(), 1);
+        assert_eq!(page.albums[0].id.as_deref(), Some("MPREb_other"));
+        assert_eq!(page.albums[0].artist.as_deref(), Some("Coldplay"));
+        assert_eq!(page.albums[0].year.as_deref(), Some("2002"));
+
+        assert_eq!(page.continuation.as_deref(), Some("CONT_TOKEN_123456"));
+    }
+
+    #[test]
+    fn browse_artist_header_without_duration_still_parses_tracks() {
+        let raw = json!({
+            "header": {"musicImmersiveHeaderRenderer": {
+                "title": {"runs": [{"text": "Coldplay"}]},
+                "thumbnail": {"musicThumbnailRenderer": {"thumbnail": {"thumbnails": [
+                    {"url": "http://x/c.jpg"}
+                ]}}}
+            }},
+            "contents": {"sectionListRenderer": {"contents": [{"musicShelfRenderer": {
+                "title": {"runs": [{"text": "Top songs"}]},
+                "contents": [{"musicResponsiveListItemRenderer": {
+                    "flexColumns": [
+                        {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Yellow"}]}}},
+                        {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Coldplay"}]}}}
+                    ],
+                    "playlistItemData": {"videoId": "yKNxeF4KMsY"}
+                }}]
+            }}]}}
+        });
+
+        let page = parse_browse_response(&raw, 300);
+        assert_eq!(page.title, "Coldplay");
+        assert_eq!(page.strapline, None);
+        assert_eq!(page.tracks.len(), 1);
+        assert_eq!(page.tracks[0].video_id, "yKNxeF4KMsY");
+        assert_eq!(page.tracks[0].duration_ms, None);
+    }
+
+    #[test]
+    fn browse_page_skips_non_album_cards() {
+        let raw = json!({
+            "contents": {"musicCarouselShelfRenderer": {"contents": [
+                {"musicTwoRowItemRenderer": {
+                    "title": {"runs": [{"text": "Coldplay Mix"}]},
+                    "subtitle": {"runs": [{"text": "Playlist"}]},
+                    "navigationEndpoint": {"browseEndpoint": {
+                        "browseId": "VLPL123",
+                        "browseEndpointContextSupportedConfigs": {"browseEndpointContextMusicConfig": {"pageType": "MUSIC_PAGE_TYPE_PLAYLIST"}}
+                    }}
+                }}
+            ]}}
+        });
+        let page = parse_browse_response(&raw, 300);
+        assert!(page.albums.is_empty());
+        assert!(page.tracks.is_empty());
+        assert_eq!(page.title, "");
     }
 }

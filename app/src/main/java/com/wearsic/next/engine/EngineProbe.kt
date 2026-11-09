@@ -59,5 +59,13 @@ class EngineProbe {
 
         @JvmStatic
         external fun probeResolveStream(requestJson: String): String
+
+        // --- Phase 6 browse probes ---
+
+        @JvmStatic
+        external fun probeBrowse(requestJson: String): String
+
+        @JvmStatic
+        external fun probeBrowseCancel(requestId: Long)
     }
 }

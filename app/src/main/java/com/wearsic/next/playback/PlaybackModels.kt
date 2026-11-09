@@ -62,13 +62,18 @@ enum class PlaybackPhase {
     Error,
 }
 
+/**
+ * Everything the UI needs about playback EXCEPT the moving position.
+ *
+ * Position ticks every 500ms while playing; keeping it out of this object
+ * means a moving progress ring redraws instead of recomposing the player
+ * screen. Read it from [PlaybackController.positionMs].
+ */
 @Serializable
 data class PlaybackUiState(
     val phase: PlaybackPhase = PlaybackPhase.Idle,
     val item: PlaybackItem? = null,
-    val positionMs: Long = 0L,
     val durationMs: Long = 0L,
-    val bufferedMs: Long = 0L,
     val isPlaying: Boolean = false,
     val errorMessage: String? = null,
     val hasPrev: Boolean = false,

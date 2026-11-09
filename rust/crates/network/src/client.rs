@@ -33,6 +33,11 @@ use crate::retry;
 type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
 type Connector = HttpsConnector<HttpConnector>;
 
+/// Hard ceiling for a single response, even with a per-request override.
+/// Browse pages legitimately exceed the 1 MiB default; nothing should ever
+/// buffer more than this on a watch.
+const ABSOLUTE_MAX_RESPONSE_BYTES: usize = 6 * 1024 * 1024;
+
 fn upgrade_connector() -> Connector {
     let mut http = HttpConnector::new();
     http.enforce_http(false);
@@ -204,6 +209,13 @@ impl HttpClient {
         let original_scheme = url.scheme().to_string();
         let original_host = url.host_str().map(str::to_string);
 
+        // Per-request cap, clamped to a hard ceiling so an override can never
+        // turn into unbounded memory on the watch.
+        let body_limit = req
+            .max_response_bytes
+            .unwrap_or(self.config.max_response_bytes)
+            .clamp(1, ABSOLUTE_MAX_RESPONSE_BYTES);
+
         let mut redirects = 0u32;
         loop {
             token.check()?;
@@ -265,7 +277,7 @@ impl HttpClient {
                 continue;
             }
 
-            let body = self.read_bounded(resp).await?;
+            let body = self.read_bounded(resp, body_limit).await?;
             let mut map = std::collections::BTreeMap::new();
             for (k, v) in headers.iter() {
                 let ks = k.as_str();
@@ -277,14 +289,18 @@ impl HttpClient {
         }
     }
 
-    async fn read_bounded(&self, resp: hyper::Response<Incoming>) -> Result<Vec<u8>, NetworkError> {
+    async fn read_bounded(
+        &self,
+        resp: hyper::Response<Incoming>,
+        limit: usize,
+    ) -> Result<Vec<u8>, NetworkError> {
         let declared = resp
             .headers()
             .get(CONTENT_LENGTH)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<usize>().ok());
         if let Some(len) = declared {
-            if len > self.config.max_response_bytes {
+            if len > limit {
                 resp.into_body().collect().await.ok();
                 return Err(NetworkError::new(
                     NetworkErrorKind::BodyTooLarge,
@@ -292,7 +308,7 @@ impl HttpClient {
                 ));
             }
         }
-        let limited = Limited::new(resp.into_body(), self.config.max_response_bytes);
+        let limited = Limited::new(resp.into_body(), limit);
         let collected = limited.collect().await.map_err(|e| {
             if e.to_string().contains("limit") {
                 NetworkError::new(NetworkErrorKind::BodyTooLarge, "response body too large")

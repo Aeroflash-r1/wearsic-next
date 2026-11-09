@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Beamed eighth notes, drawn inside the 66% adaptive-icon safe zone. -->
+    <path
+        android:fillColor="#C4B0FF"
+        android:pathData="M43,32h6v36h-6z" />
+    <path
+        android:fillColor="#C4B0FF"
+        android:pathData="M62,26h6v36h-6z" />
+    <path
+        android:fillColor="#C4B0FF"
+        android:pathData="M43,32L68,26v8L43,40z" />
+    <path
+        android:fillColor="#C4B0FF"
+        android:pathData="M37,68a9,9 0 1,0 18,0a9,9 0 1,0 -18,0z" />
+    <path
+        android:fillColor="#C4B0FF"
+        android:pathData="M56,62a9,9 0 1,0 18,0a9,9 0 1,0 -18,0z" />
+</vector>

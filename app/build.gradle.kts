@@ -38,6 +38,35 @@ val ndkSysrootPath = File(
 ).absolutePath
 val unwindLibsPath = File(System.getProperty("user.home"), ".wearsic-link-libs").absolutePath
 
+// ---------------------------------------------------------------------------
+// Release signing (credentials are never committed)
+// ---------------------------------------------------------------------------
+// Resolution order per value:
+//   1. environment: WEARSIC_KEYSTORE_FILE / _PASSWORD / _KEY_ALIAS / _KEY_PASSWORD
+//   2. keystore.properties in the project root (gitignored)
+// When nothing is configured the release APK is simply left unsigned, so
+// `assembleRelease` still works for R8/lint verification on a fresh clone.
+// ---------------------------------------------------------------------------
+val keystoreProps = Properties().apply {
+    rootProject.file("keystore.properties")
+        .takeIf { it.exists() }
+        ?.inputStream()
+        ?.use { load(it) }
+}
+
+fun signingValue(envKey: String, propKey: String): String? =
+    System.getenv(envKey) ?: keystoreProps.getProperty(propKey)
+
+val keystoreFile: File? = signingValue("WEARSIC_KEYSTORE_FILE", "storeFile")
+    ?.let { rootProject.file(it) }
+    ?.takeIf { it.exists() }
+val keystorePassword: String? = signingValue("WEARSIC_KEYSTORE_PASSWORD", "storePassword")
+val keystoreAlias: String? = signingValue("WEARSIC_KEY_ALIAS", "keyAlias")
+val keystoreKeyPassword: String? = signingValue("WEARSIC_KEY_PASSWORD", "keyPassword")
+val hasReleaseSigning =
+    keystoreFile != null && keystorePassword != null &&
+        keystoreAlias != null && keystoreKeyPassword != null
+
 val buildRustEngineArm64 by tasks.registering(Exec::class) {
     group = "build"
     workingDir(rustDir)
@@ -116,11 +145,13 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = rootProject.file("wearsic-next.jks")
-            storePassword = "wearsicnext"
-            keyAlias = "wearsic"
-            keyPassword = "wearsicnext"
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                keyAlias = keystoreAlias
+                keyPassword = keystoreKeyPassword
+            }
         }
     }
 
@@ -132,7 +163,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

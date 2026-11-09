@@ -1,8 +1,10 @@
 package com.wearsic.next.playback
 
 import android.content.Context
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -10,7 +12,6 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.wearsic.next.engine.RustEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,7 +23,11 @@ import java.util.concurrent.TimeUnit
  * The app's single MediaSessionService. Owns the one ExoPlayer + MediaSession
  * for the whole process. Only active while playback is actually required;
  * Android tears it down when the session is no longer referenced.
+ *
+ * The load-control / wake-mode builders are @UnstableApi by Media3's own
+ * definition; opting in at the class keeps the annotation off every call.
  */
+@OptIn(UnstableApi::class)
 class WearsicPlaybackService : MediaSessionService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -120,8 +125,5 @@ class WearsicPlaybackService : MediaSessionService() {
         /** Matches the IOS client UA used by stream resolution. */
         private const val IOS_CLIENT_UA =
             "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X;)"
-
-        /** Creates (or reuses) the shared engine handle. */
-        fun engine(): RustEngine = RustEngine.create().also { it.networkInit() }
     }
 }

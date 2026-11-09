@@ -82,6 +82,16 @@ class RustEngine private constructor() {
         external fun nativeResolveStream(requestJson: String): String
 
         /**
+         * Fetches an album / playlist / artist page; returns JSON envelope.
+         */
+        @JvmStatic
+        external fun nativeBrowse(requestJson: String): String
+
+        /** Cancels an in-flight browse by request id. */
+        @JvmStatic
+        external fun nativeBrowseCancel(requestId: Long)
+
+        /**
          * Loads + initializes the engine. Throws [EngineException] if the
          * native library is missing or initialization fails.
          */
@@ -158,6 +168,39 @@ class RustEngine private constructor() {
 
     fun searchCancel(requestId: Long) = nativeSearchCancel(requestId)
 
+    // --- Phase 6: browse pages (album / playlist / artist) ---
+
+    /**
+     * Fetches one browse page. Pass [continuation] to load the next page of a
+     * long album/playlist. Blocking on the calling worker thread.
+     */
+    fun browse(
+        browseId: String,
+        continuation: String? = null,
+        requestId: Long = 0L,
+    ): BrowsePageDto {
+        val request = BrowseRequest(
+            browseId = browseId,
+            continuation = continuation,
+            requestId = requestId.takeIf { it != 0L },
+        )
+        val raw = nativeBrowse(json.encodeToString(BrowseRequest.serializer(), request))
+        val envelope = runCatching {
+            json.decodeFromString(BrowseEnvelope.serializer(), raw)
+        }.getOrElse {
+            BrowseEnvelope(ok = false, error = NetworkErrorPublic("invalid_response", 0, "bad envelope"))
+        }
+        val page = envelope.page
+        if (!envelope.ok || page == null) {
+            throw NetworkEngineException(
+                envelope.error ?: NetworkErrorPublic("internal", 0, "browse failed")
+            )
+        }
+        return page
+    }
+
+    fun browseCancel(requestId: Long) = nativeBrowseCancel(requestId)
+
     // --- Phase 5: stream resolution ---
 
     /**
@@ -183,6 +226,20 @@ class RustEngine private constructor() {
         return envelope.stream
     }
 }
+
+@kotlinx.serialization.Serializable
+data class BrowseRequest(
+    @SerialName("browse_id") val browseId: String,
+    val continuation: String? = null,
+    @SerialName("request_id") val requestId: Long? = null,
+)
+
+@Serializable
+data class BrowseEnvelope(
+    val ok: Boolean,
+    val page: BrowsePageDto? = null,
+    val error: NetworkErrorPublic? = null,
+)
 
 @kotlinx.serialization.Serializable
 data class SearchRequest(

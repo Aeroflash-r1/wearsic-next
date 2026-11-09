@@ -73,11 +73,27 @@ pub struct ContinuationBody {
     pub continuation: String,
 }
 
+/// Request body for a browse call (album / playlist / artist pages).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowseBody {
+    pub context: InnerTubeContext,
+    pub browse_id: String,
+    /// Optional page params (e.g. `wAEB` for radio). Omitted when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<String>,
+}
+
 /// Standard InnerTube search endpoint + public key (same as the YTM web
 /// app / original Wearsic server; no authentication).
 pub const YTM_SEARCH_URL: &str = "https://music.youtube.com/youtubei/v1/search";
+pub const YTM_BROWSE_URL: &str = "https://music.youtube.com/youtubei/v1/browse";
 pub const YTM_API_KEY: &str = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30";
 
 pub fn search_url() -> String {
     format!("{YTM_SEARCH_URL}?alt=json&key={YTM_API_KEY}")
+}
+
+pub fn browse_url() -> String {
+    format!("{YTM_BROWSE_URL}?alt=json&key={YTM_API_KEY}")
 }

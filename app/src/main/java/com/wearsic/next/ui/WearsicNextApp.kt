@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -43,6 +44,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
@@ -54,6 +58,8 @@ import coil.request.ImageRequest
 import com.wearsic.next.engine.MusicSearchResult
 import com.wearsic.next.playback.PlaybackPhase
 import com.wearsic.next.playback.PlaybackViewModel
+import com.wearsic.next.ui.browse.BrowseKind
+import com.wearsic.next.ui.browse.BrowseScreen
 import com.wearsic.next.ui.components.WearsicPrimaryPillButton
 import com.wearsic.next.ui.components.WearsicScreenHeader
 import com.wearsic.next.ui.components.WearsicSecondaryPillButton
@@ -86,9 +92,24 @@ import com.wearsic.next.ui.util.wearsicClickable
 import com.wearsic.next.ui.util.wearsicEntrance
 import com.wearsic.next.ui.util.wearsicRotaryScroll
 
-/** Screens of the app; a simple stack keeps cold-start light and navigation instant. */
-internal enum class Destination {
-    Home, Search, Player, Queue, Sound, Favorites, Settings,
+/**
+ * Screens of the app; a simple stack keeps cold-start light and navigation
+ * instant. Browse carries its target so album → artist → album nesting keeps
+ * a real back trail.
+ */
+internal sealed interface Destination {
+    data object Home : Destination
+    data object Search : Destination
+    data object Player : Destination
+    data object Queue : Destination
+    data object Sound : Destination
+    data object Favorites : Destination
+    data object Settings : Destination
+    data class Browse(
+        val browseId: String,
+        val kind: BrowseKind,
+        val title: String,
+    ) : Destination
 }
 
 private fun <T> SnapshotStateList<T>.push(item: T) {
@@ -113,9 +134,30 @@ private fun <T> SnapshotStateList<T>.pop() {
 fun WearsicNextApp(
     playbackViewModel: PlaybackViewModel = viewModel(),
 ) {
-    val backStack = remember { androidx.compose.runtime.mutableStateListOf(Destination.Home) }
+    val backStack = remember {
+        androidx.compose.runtime.mutableStateListOf<Destination>(Destination.Home)
+    }
     val current = backStack.last()
     val artworkAccent = remember { mutableStateOf<Color?>(null) }
+
+    // Battery: the position ticker parks whenever no UI is on screen. The
+    // player keeps playing (Media3 owns that); only our 2Hz UI poll stops,
+    // so a watch with the screen off is not woken every 500ms.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, playbackViewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> playbackViewModel.setUiActive(true)
+                Lifecycle.Event.ON_STOP -> playbackViewModel.setUiActive(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            playbackViewModel.setUiActive(true)
+        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Resolved app accent: fixed choice from prefs, or the artwork hue.
     val hoistedAccent = artworkAccent.value
@@ -137,10 +179,34 @@ fun WearsicNextApp(
         Box(modifier = Modifier.fillMaxSize().background(WearsicAppBackground)) {
             when (current) {
                 Destination.Search -> SearchScreen(
-                    onResultSelected = { result ->
-                        if (result is MusicSearchResult.Track) {
-                            playbackViewModel.playSearchResult(result)
-                            backStack.push(Destination.Player)
+                    onResultSelected = { result, visible ->
+                        when (result) {
+                            is MusicSearchResult.Track -> {
+                                // Queue every song in the list you are looking
+                                // at, starting from the one you tapped.
+                                val tracks = visible.filterIsInstance<MusicSearchResult.Track>()
+                                val start = tracks.indexOfFirst {
+                                    it.track.videoId == result.track.videoId
+                                }.coerceAtLeast(0)
+                                playbackViewModel.playSearchResults(tracks, start)
+                                backStack.push(Destination.Player)
+                            }
+                            is MusicSearchResult.Album -> result.album.id?.let { id ->
+                                backStack.push(
+                                    Destination.Browse(id, BrowseKind.Album, result.album.title)
+                                )
+                            }
+                            is MusicSearchResult.Artist -> result.artist.id?.let { id ->
+                                backStack.push(
+                                    Destination.Browse(id, BrowseKind.Artist, result.artist.name)
+                                )
+                            }
+                            is MusicSearchResult.Playlist -> result.playlist.id?.let { id ->
+                                backStack.push(
+                                    Destination.Browse(id, BrowseKind.Playlist, result.playlist.title)
+                                )
+                            }
+                            MusicSearchResult.Unknown -> Unit
                         }
                     },
                     onBack = { backStack.pop() },
@@ -152,6 +218,16 @@ fun WearsicNextApp(
                     onNavigateToVolume = { backStack.push(Destination.Sound) },
                     onArtworkColor = { colors ->
                         if (colors.fromArtwork) artworkAccent.value = colors.accent
+                    },
+                )
+                is Destination.Browse -> BrowseScreen(
+                    browseId = current.browseId,
+                    kind = current.kind,
+                    fallbackTitle = current.title,
+                    playbackViewModel = playbackViewModel,
+                    onOpenPlayer = { backStack.push(Destination.Player) },
+                    onOpenBrowse = { kind, browseId, title ->
+                        backStack.push(Destination.Browse(browseId, kind, title))
                     },
                 )
                 Destination.Queue -> QueueScreen(

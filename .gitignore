@@ -16,3 +16,8 @@ captures/
 # Rust
 rust/target/
 **/*.rs.bk
+
+# Signing material — never commit
+*.jks
+*.keystore
+keystore.properties

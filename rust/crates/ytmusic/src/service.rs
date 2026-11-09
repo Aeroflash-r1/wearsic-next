@@ -9,8 +9,10 @@ use std::time::Instant;
 use innertube::InnerTubeClient;
 use network::{CancellationToken, HttpClient};
 
-use crate::mapper::{find_continuation, parse_search_response, SearchFilter};
-use crate::models::SearchPage;
+use crate::mapper::{
+    find_continuation, parse_browse_response, parse_search_response, SearchFilter,
+};
+use crate::models::{BrowsePage, SearchPage};
 
 /// Bounded TTL cache for search pages (in-memory only).
 struct SearchCache {
@@ -96,6 +98,40 @@ impl YtMusicService {
         let page = SearchPage { results: results.clone(), continuation: continuation.clone() };
         self.cache.put(key, page);
         Ok(SearchPage { results, continuation })
+    }
+
+    /// Fetches an album, playlist or artist page. One request per visit: the
+    /// result is user-initiated and a page is cheap to re-fetch.
+    pub async fn browse(
+        &self,
+        browse_id: &str,
+        token: &CancellationToken,
+    ) -> Result<BrowsePage, String> {
+        let raw = self
+            .innertube
+            .browse(browse_id, None, token)
+            .await
+            .map_err(|e| e.to_string())?;
+        let page = parse_browse_response(&raw, 300);
+        // A non-existent id still returns HTTP 200 with an empty shell.
+        if page.title.is_empty() && page.tracks.is_empty() && page.albums.is_empty() {
+            return Err("this page is unavailable".to_string());
+        }
+        Ok(page)
+    }
+
+    /// Fetches the next page of a browse result (long playlists/albums).
+    pub async fn browse_more(
+        &self,
+        continuation: &str,
+        token: &CancellationToken,
+    ) -> Result<BrowsePage, String> {
+        let raw = self
+            .innertube
+            .browse_continuation(continuation, token)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(parse_browse_response(&raw, 300))
     }
 
     /// Fetches the next page via a continuation token. Not cached (pages are

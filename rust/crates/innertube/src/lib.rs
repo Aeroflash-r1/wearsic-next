@@ -6,7 +6,7 @@ pub mod parser;
 
 use network::{CancellationToken, HttpClient, NetworkError, Request};
 
-use context::{ContinuationBody, SearchBody};
+use context::{BrowseBody, ContinuationBody, SearchBody};
 
 /// Errors specific to InnerTube interaction. Reuses [`NetworkError`] for
 /// transport-level failures and adds service-level errors.
@@ -35,6 +35,11 @@ impl std::fmt::Display for InnerTubeError {
     }
 }
 
+/// Browse pages (long playlists, artist discographies) legitimately exceed
+/// the network engine's 1 MiB default. The client clamps this to its own
+/// hard ceiling.
+const BROWSE_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
 /// A thin client over the Phase 3 shared HTTP client. One instance is cheap
 /// (it only borrows the shared client).
 #[derive(Clone)]
@@ -54,17 +59,30 @@ impl InnerTubeClient {
         body: &impl serde::Serialize,
         token: &CancellationToken,
     ) -> Result<serde_json::Value, InnerTubeError> {
+        self.post_json_capped(url, body, None, token).await
+    }
+
+    /// Like [Self::post_json] with an optional response-size override.
+    async fn post_json_capped(
+        &self,
+        url: &str,
+        body: &impl serde::Serialize,
+        max_response_bytes: Option<usize>,
+        token: &CancellationToken,
+    ) -> Result<serde_json::Value, InnerTubeError> {
         let payload = serde_json::to_string(body)
             .map_err(|e| InnerTubeError::InvalidResponse(format!("serialize: {e}")))?;
 
+        let mut request = Request::post(url, payload.into_bytes())
+            .with_header("content-type", "application/json")
+            .with_header("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0");
+        if let Some(limit) = max_response_bytes {
+            request = request.with_max_response_bytes(limit);
+        }
+
         let response = self
             .http
-            .execute(
-                Request::post(url, payload.into_bytes())
-                    .with_header("content-type", "application/json")
-                    .with_header("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0"),
-                token,
-            )
+            .execute(request, token)
             .await
             .map_err(InnerTubeError::from)?;
 
@@ -117,6 +135,47 @@ impl InnerTubeClient {
         };
         self.post_json(&context::search_url(), &body, token).await
     }
+
+    /// Fetch a browse page: album (`MPREb…`), playlist (`VL…`), artist
+    /// (`UC…`) or radio (`RDAMVM…`).
+    pub async fn browse(
+        &self,
+        browse_id: &str,
+        params: Option<&str>,
+        token: &CancellationToken,
+    ) -> Result<serde_json::Value, InnerTubeError> {
+        let body = BrowseBody {
+            context: context::InnerTubeContext::web_remix(),
+            browse_id: browse_id.to_string(),
+            params: params.map(str::to_string),
+        };
+        self.post_json_capped(
+            &context::browse_url(),
+            &body,
+            Some(BROWSE_MAX_RESPONSE_BYTES),
+            token,
+        )
+        .await
+    }
+
+    /// Fetch the next page of a browse result (album track list, playlist).
+    pub async fn browse_continuation(
+        &self,
+        continuation: &str,
+        token: &CancellationToken,
+    ) -> Result<serde_json::Value, InnerTubeError> {
+        let body = ContinuationBody {
+            context: context::InnerTubeContext::web_remix(),
+            continuation: continuation.to_string(),
+        };
+        self.post_json_capped(
+            &context::browse_url(),
+            &body,
+            Some(BROWSE_MAX_RESPONSE_BYTES),
+            token,
+        )
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -148,6 +207,18 @@ mod tests {
             params: None,
         };
         let s = serde_json::to_string(&body).unwrap();
+        assert!(!s.contains("\"params\""));
+    }
+
+    #[test]
+    fn browse_body_serializes_browse_id_and_omits_params() {
+        let body = BrowseBody {
+            context: context::InnerTubeContext::web_remix(),
+            browse_id: "MPREb_album".into(),
+            params: None,
+        };
+        let s = serde_json::to_string(&body).unwrap();
+        assert!(s.contains("\"browseId\":\"MPREb_album\""));
         assert!(!s.contains("\"params\""));
     }
 }

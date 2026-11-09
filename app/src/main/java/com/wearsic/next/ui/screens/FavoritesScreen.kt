@@ -23,6 +23,7 @@ import com.wearsic.next.ui.data.FavoritesStore
 import com.wearsic.next.ui.theme.WearsicTextPrimary
 import com.wearsic.next.ui.theme.wearsicListContentPadding
 import com.wearsic.next.ui.util.wearsicRotaryScroll
+import com.wearsic.next.ui.util.wearsicEntrance
 
 /**
  * FAVORITES — the standalone equivalent of the original favorites screen.
@@ -42,6 +43,7 @@ fun FavoritesScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .wearsicEntrance()
                 .wearsicRotaryScroll(listState),
             contentPadding = wearsicListContentPadding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(6.dp),

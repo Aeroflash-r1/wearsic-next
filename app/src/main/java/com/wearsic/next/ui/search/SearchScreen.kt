@@ -90,7 +90,7 @@ import java.util.Locale
  */
 @Composable
 fun SearchScreen(
-    onResultSelected: (MusicSearchResult) -> Unit,
+    onResultSelected: (MusicSearchResult, List<MusicSearchResult>) -> Unit,
     onBack: () -> Unit = {},
     playbackViewModel: PlaybackViewModel? = null,
     viewModel: SearchViewModel = viewModel(),
@@ -274,7 +274,11 @@ fun SearchScreen(
                                         result.track.videoId == playingVideoId,
                                     isFavorite = result is MusicSearchResult.Track &&
                                         FavoritesStore.isFavorite(result.track.videoId),
-                                    onPlay = { onResultSelected(result) },
+                                    // The whole visible list becomes the queue, so
+                                    // next/previous walk the search results (as in
+                                    // the original Wearsic) instead of stopping
+                                    // after one song.
+                                    onPlay = { onResultSelected(result, visible) },
                                     onToggleFavorite = {
                                         (result as? MusicSearchResult.Track)?.let {
                                             FavoritesStore.toggle(PlaybackItem.fromSearch(it.track))

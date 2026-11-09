@@ -61,6 +61,26 @@ data class PlaylistDto(
 )
 
 /**
+ * One album / playlist / artist page from the Rust engine.
+ *
+ * `tracks` is the playable list (album songs, playlist songs, artist top
+ * songs); `albums` is populated on artist pages only.
+ */
+@Serializable
+data class BrowsePageDto(
+    val title: String = "",
+    val subtitle: String? = null,
+    val strapline: String? = null,
+    @SerialName("second_subtitle") val secondSubtitle: String? = null,
+    val thumbnails: List<Thumbnail> = emptyList(),
+    val tracks: List<TrackDto> = emptyList(),
+    val albums: List<AlbumDto> = emptyList(),
+    val continuation: String? = null,
+) {
+    val artworkUrl: String? get() = thumbnails.lastOrNull()?.url
+}
+
+/**
  * Mirrors the Rust externally-tagged enum `MusicSearchResult`: exactly one
  * of these fields is present.
  */

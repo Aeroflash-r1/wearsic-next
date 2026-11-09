@@ -7,6 +7,7 @@ import com.wearsic.next.engine.Thumbnail
 import com.wearsic.next.engine.TrackDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -64,7 +65,7 @@ class PlaybackModelsTest {
         val s = PlaybackUiState()
         assertEquals(PlaybackPhase.Idle, s.phase)
         assertNull(s.item)
-        assertEquals(0L, s.positionMs)
+        assertEquals(0L, s.durationMs)
         assertTrue(!s.isPlaying)
         assertNull(s.errorMessage)
     }
@@ -74,14 +75,12 @@ class PlaybackModelsTest {
         val s = PlaybackUiState(
             phase = PlaybackPhase.Playing,
             item = PlaybackItem.from(track, stream),
-            positionMs = 120_000,
             durationMs = 267_000,
             isPlaying = true,
         )
-        val s2 = s.copy(positionMs = 130_000)
-        assertEquals(130_000L, s2.positionMs)
-        assertEquals(PlaybackPhase.Playing, s2.phase)
+        val s2 = s.copy(phase = PlaybackPhase.Paused, isPlaying = false)
+        assertEquals(PlaybackPhase.Paused, s2.phase)
         assertEquals(267_000L, s2.durationMs)
-        assertTrue(s2.isPlaying)
+        assertFalse(s2.isPlaying)
     }
 }
