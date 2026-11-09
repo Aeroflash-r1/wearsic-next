@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -74,6 +75,9 @@ import com.wearsic.next.ui.settings.SettingsScreen
 import com.wearsic.next.ui.screens.FavoritesScreen
 import com.wearsic.next.ui.screens.QueueScreen
 import com.wearsic.next.ui.screens.RecommendationsScreen
+import com.wearsic.next.ui.screens.DownloadsScreen
+import com.wearsic.next.ui.screens.PlaylistDetailScreen
+import com.wearsic.next.ui.screens.PlaylistsScreen
 import com.wearsic.next.ui.screens.VolumeScreen
 import com.wearsic.next.ui.theme.LocalWearsicAccent
 import com.wearsic.next.ui.theme.WearsicAppBackground
@@ -107,6 +111,10 @@ internal sealed interface Destination {
     data object Sound : Destination
     data object Favorites : Destination
     data object MadeForYou : Destination
+    data object Downloads : Destination
+    data object Playlists : Destination
+    data object PickPlaylist : Destination
+    data class PlaylistDetail(val name: String) : Destination
     data object Settings : Destination
     data class Browse(
         val browseId: String,
@@ -219,6 +227,9 @@ fun WearsicNextApp(
                     viewModel = playbackViewModel,
                     onNavigateToQueue = { backStack.push(Destination.Queue) },
                     onNavigateToVolume = { backStack.push(Destination.Sound) },
+                    onNavigateToDownloads = { backStack.push(Destination.Downloads) },
+                    onDownloadTrack = playbackViewModel::cacheCurrentTrack,
+                    onNavigateToPickPlaylist = { backStack.push(Destination.PickPlaylist) },
                     onArtworkColor = { colors ->
                         if (colors.fromArtwork) artworkAccent.value = colors.accent
                     },
@@ -232,6 +243,28 @@ fun WearsicNextApp(
                     onOpenBrowse = { kind, browseId, title ->
                         backStack.push(Destination.Browse(browseId, kind, title))
                     },
+                )
+                Destination.Downloads -> DownloadsScreen(
+                    viewModel = playbackViewModel,
+                    onPlay = { backStack.push(Destination.Player) },
+                    onBack = { backStack.pop() },
+                )
+                Destination.Playlists -> PlaylistsScreen(
+                    viewModel = playbackViewModel,
+                    onOpenDetail = { name -> backStack.push(Destination.PlaylistDetail(name)) },
+                    onBack = { backStack.pop() },
+                )
+                Destination.PickPlaylist -> PlaylistsScreen(
+                    viewModel = playbackViewModel,
+                    onOpenDetail = { },
+                    onBack = { backStack.pop() },
+                    chooser = true,
+                )
+                is Destination.PlaylistDetail -> PlaylistDetailScreen(
+                    playlistName = current.name,
+                    viewModel = playbackViewModel,
+                    onPlayAll = { backStack.push(Destination.Player) },
+                    onBack = { backStack.pop() },
                 )
                 Destination.Queue -> QueueScreen(
                     viewModel = playbackViewModel,
@@ -260,6 +293,8 @@ fun WearsicNextApp(
                     onFavorites = { backStack.push(Destination.Favorites) },
                     onMadeForYou = { backStack.push(Destination.MadeForYou) },
                     onSound = { backStack.push(Destination.Sound) },
+                    onPlaylists = { backStack.push(Destination.Playlists) },
+                    onDownloads = { backStack.push(Destination.Downloads) },
                     onSettings = { backStack.push(Destination.Settings) },
                 )
             }
@@ -282,6 +317,8 @@ private fun HomeScreen(
     onFavorites: () -> Unit,
     onMadeForYou: () -> Unit,
     onSound: () -> Unit,
+    onPlaylists: () -> Unit,
+    onDownloads: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val state by playbackViewModel.state.collectAsState()
@@ -367,6 +404,27 @@ private fun HomeScreen(
                     onClick = onFavorites,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+
+            // Playlists + Saved offline side by side.
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    WearsicSecondaryPillButton(
+                        label = "Playlists",
+                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                        onClick = onPlaylists,
+                        modifier = Modifier.weight(1f)
+                    )
+                    WearsicSecondaryPillButton(
+                        label = "Saved offline",
+                        icon = Icons.Rounded.CloudDownload,
+                        onClick = onDownloads,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             // Recently Played — one-tap resume, like the original home.

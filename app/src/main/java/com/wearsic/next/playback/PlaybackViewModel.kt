@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import com.wearsic.next.engine.RustEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -39,6 +41,35 @@ class PlaybackViewModel(application: Application) : AndroidViewModel(application
     fun playTracks(items: List<PlaybackItem>, startIndex: Int = 0) {
         controller.play(items, startIndex)
     }
+
+    /**
+     * Cache the current track for offline playback (DownloadStore).
+     * Resolves the stream if the item hasn't been played yet; resolves are
+     * cached by the engine so re-taps are cheap.
+     */
+    fun cacheCurrentTrack(onResult: (Boolean) -> Unit) {
+        val current = controller.state.value.item ?: return onResult(false)
+        val videoId = current.videoId
+        viewModelScope.launch {
+            if (com.wearsic.next.ui.data.DownloadStore.isDownloaded(videoId)) {
+                onResult(true)
+                return@launch
+            }
+            val stream = current.stream
+                ?: withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { engine.resolveStream(videoId) }.getOrNull()
+                }
+                ?: run {
+                    onResult(false)
+                    return@launch
+                }
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                onResult(com.wearsic.next.ui.data.DownloadStore.save(stream, current))
+            }
+        }
+    }
+
+    fun isCached(videoId: String): Boolean = com.wearsic.next.ui.data.DownloadStore.isDownloaded(videoId)
 
     fun playQueueIndex(index: Int) = controller.playQueueIndex(index)
 

@@ -312,6 +312,33 @@ class PlaybackController(
         com.wearsic.next.ui.data.RecentStore.record(item)
 
         scope.launch {
+            val cachedFile = com.wearsic.next.ui.data.DownloadStore.fileFor(item.videoId)
+            val cacheMeta = com.wearsic.next.ui.data.DownloadStore.items[item.videoId]
+            val canPlayCached = com.wearsic.next.ui.data.DownloadStore.isDownloaded(item.videoId) &&
+                cachedFile != null && cachedFile.exists()
+            if (canPlayCached) {
+                // Saved copy preferred: no network for a track the user explicitly
+                // chose to keep offline.
+                if (token != playToken) return@launch
+                val fresh = item.copy(durationMs = cacheMeta?.durationMs ?: item.durationMs)
+                queueItems[index] = fresh
+                _state.update {
+                    it.copy(
+                        phase = PlaybackPhase.Preparing,
+                        item = fresh,
+                        durationMs = fresh.durationMs ?: 0L,
+                    )
+                }
+                val c0 = controller ?: return@launch
+                c0.setMediaItem(
+                    mediaItemFromFile(fresh, cachedFile, cacheMeta?.mimeType ?: "audio/mp4")
+                )
+                c0.prepare()
+                c0.play()
+                prefetchNext()
+                return@launch
+            }
+
             val descriptor = item.stream ?: resolve(item.videoId)
             if (token != playToken) return@launch // user skipped elsewhere
             if (descriptor == null) {
@@ -646,15 +673,11 @@ class PlaybackController(
 
     // --- Media item construction -------------------------------------------
 
-    private fun toMediaItem(item: PlaybackItem): MediaItem {
-        val stream = requireNotNull(item.stream)
-        // The full item rides inside the metadata extras (JSON): a restarted
-        // UI re-reads it via [hydrateFromSession] and shows the live song
-        // instead of "Nothing playing" while audio keeps going.
+    private fun mediaMetadataFor(item: PlaybackItem): MediaMetadata {
         val extras = android.os.Bundle().apply {
             putString(KEY_ITEM_JSON, runCatching { itemJson.encodeToString(item) }.getOrNull())
         }
-        val metadata = MediaMetadata.Builder()
+        return MediaMetadata.Builder()
             .setTitle(item.title)
             .setArtist(item.artistLabel)
             .setAlbumTitle(item.albumLabel)
@@ -663,11 +686,24 @@ class PlaybackController(
                 item.artworkUrl?.let { setArtworkUri(android.net.Uri.parse(it)) }
             }
             .build()
+    }
+
+    private fun toMediaItem(item: PlaybackItem): MediaItem {
+        val stream = requireNotNull(item.stream)
         return MediaItem.Builder()
             .setMediaId(item.videoId)
             .setUri(stream.url)
             .setMimeType(stream.mimeType)
-            .setMediaMetadata(metadata)
+            .setMediaMetadata(mediaMetadataFor(item))
+            .build()
+    }
+
+    private fun mediaItemFromFile(item: PlaybackItem, file: java.io.File, mimeType: String): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(item.videoId)
+            .setUri(android.net.Uri.fromFile(file))
+            .setMimeType(mimeType)
+            .setMediaMetadata(mediaMetadataFor(item))
             .build()
     }
 

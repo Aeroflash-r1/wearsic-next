@@ -7,6 +7,8 @@ import com.wearsic.next.engine.RustEngine
 import com.wearsic.next.ui.WearsicNextApp
 import com.wearsic.next.ui.data.FavoritesStore
 import com.wearsic.next.ui.data.RecentStore
+import com.wearsic.next.ui.data.PlaylistsStore
+import com.wearsic.next.ui.data.DownloadStore
 import com.wearsic.next.ui.theme.WearsicPrefs
 
 class MainActivity : ComponentActivity() {
@@ -19,6 +21,8 @@ class MainActivity : ComponentActivity() {
         WearsicPrefs.init(this)
         FavoritesStore.init(this)
         RecentStore.init(this)
+        PlaylistsStore.init(this)
+        DownloadStore.init(this)
         setContent {
             WearsicNextApp()
         }

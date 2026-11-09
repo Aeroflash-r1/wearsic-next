@@ -35,6 +35,9 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -148,7 +151,10 @@ fun NowPlayingScreen(
     viewModel: PlaybackViewModel,
     onNavigateToQueue: () -> Unit,
     onNavigateToVolume: () -> Unit,
+    onNavigateToDownloads: () -> Unit = {},
     onArtworkColor: (ArtworkColors) -> Unit = {},
+    onDownloadTrack: ((onResult: (Boolean) -> Unit) -> Unit)? = null,
+    onNavigateToPickPlaylist: () -> Unit = {},
 ) {
     val playbackState by viewModel.state.collectAsState()
     val track = playbackState.item
@@ -238,6 +244,10 @@ fun NowPlayingScreen(
                                 onToggleFavorite = { track?.let { FavoritesStore.toggle(it) } },
                                 onNavigateToQueue = onNavigateToQueue,
                                 onNavigateToVolume = onNavigateToVolume,
+                                onNavigateToDownloads = onNavigateToDownloads,
+                                onAddToPlaylist = onNavigateToPickPlaylist,
+                                onCacheTrack = onDownloadTrack
+                                    ?: viewModel::cacheCurrentTrack,
                                 active = pageIndex == 1,
                                 onShuffle = viewModel::setShuffle,
                                 onCycleRepeat = viewModel::cycleRepeatMode,
@@ -708,12 +718,17 @@ private fun ActionsPage(
     onToggleFavorite: () -> Unit,
     onNavigateToQueue: () -> Unit,
     onNavigateToVolume: () -> Unit,
+    onNavigateToDownloads: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onCacheTrack: (onResult: (Boolean) -> Unit) -> Unit,
     active: Boolean,
     onShuffle: (Boolean) -> Unit,
     onCycleRepeat: () -> Unit,
 ) {
     val listState = rememberScalingLazyListState()
     val hasTrack = state.item != null
+    var cacheState by remember { mutableStateOf("idle") }
+    val perKeyCached = state.item?.let { com.wearsic.next.ui.data.DownloadStore.isDownloaded(it.videoId) } == true
     ScalingLazyColumn(
         state = listState,
         modifier = Modifier
@@ -756,6 +771,41 @@ private fun ActionsPage(
                 enabled = hasTrack,
                 onClick = onCycleRepeat,
                 testTag = "player_repeat_button"
+            )
+        }
+        item {
+            ActionRow(
+                icon = Icons.Rounded.CloudDownload,
+                label = when {
+                    cacheState == "busy" -> "Saving…"
+                    cacheState == "failed" -> "Save failed — retry"
+                    perKeyCached -> "Saved offline"
+                    else -> "Save offline"
+                },
+                enabled = hasTrack && cacheState != "busy",
+                onClick = {
+                    cacheState = "busy"
+                    onCacheTrack { ok -> cacheState = if (ok) "done" else "failed" }
+                },
+                testTag = "player_save_offline_button"
+            )
+        }
+        item {
+            ActionRow(
+                icon = Icons.Rounded.Folder,
+                label = "Saved tracks",
+                enabled = true,
+                onClick = onNavigateToDownloads,
+                testTag = "player_saved_tracks_button"
+            )
+        }
+        item {
+            ActionRow(
+                icon = Icons.Rounded.Add,
+                label = "Add to playlist",
+                enabled = hasTrack,
+                onClick = onAddToPlaylist,
+                testTag = "player_add_to_playlist_button"
             )
         }
         item {

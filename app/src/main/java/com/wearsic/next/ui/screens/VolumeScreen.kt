@@ -41,7 +41,9 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.VolumeDown
 import androidx.compose.material.icons.rounded.VolumeMute
 import androidx.compose.material.icons.rounded.VolumeOff
@@ -125,6 +127,16 @@ fun VolumeScreen(
         return "$totalMin:${sec.toString().padStart(2, '0')}"
     }
 
+    // Current output route — the wear OS equivalent of the original's
+    // "Audio Output" list.
+    val outputLabel = remember {
+        runCatching {
+            val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+                .toList()
+            classifyOutput(devices)
+        }.getOrElse { "Watch speaker" }
+    }
+
     ScreenScaffold(
         scrollState = listState,
     ) { contentPadding ->
@@ -139,6 +151,31 @@ fun VolumeScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             item { WearsicScreenHeader("Sound") }
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .border(1.dp, WearsicSurfaceBorder, RoundedCornerShape(50))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = outputIcon(outputLabel),
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = outputLabel,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
             item { WearsicSectionTitle("Volume") }
             item {
                 Row(
@@ -293,3 +330,31 @@ private fun VolButton(
 
 private fun currentVolume(audioManager: AudioManager): Int =
     audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+
+private fun classifyOutput(devices: List<android.media.AudioDeviceInfo>): String {
+    val types = devices.map { it.type }
+    return when {
+        types.any {
+            it == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+        } -> "Bluetooth earbuds"
+        types.any { it == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } ->
+            "Bluetooth headphones"
+        types.any { it == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO } ->
+            "Bluetooth (call)"
+        types.any { it == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES } ->
+            "Wired headphones"
+        types.any { it == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET } ->
+            "Wired earphones"
+        types.any {
+            it == android.media.AudioDeviceInfo.TYPE_USB_DEVICE ||
+                it == android.media.AudioDeviceInfo.TYPE_USB_HEADSET
+        } -> "USB audio"
+        else -> "Watch speaker"
+    }
+}
+
+private fun outputIcon(label: String) = when {
+    label.contains("Bluetooth") || label.contains("USB") -> Icons.Rounded.Bluetooth
+    label.contains("Wired") -> Icons.Rounded.Speaker
+    else -> Icons.Rounded.Speaker
+}

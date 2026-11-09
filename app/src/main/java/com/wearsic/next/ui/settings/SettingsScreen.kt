@@ -165,6 +165,52 @@ fun SettingsScreen(
                 )
             }
 
+            item { SectionTitle("Your library") }
+
+            item {
+                val favorites = com.wearsic.next.ui.data.FavoritesStore.ids.size
+                val recents = com.wearsic.next.ui.data.RecentStore.items.size
+                val downloads = com.wearsic.next.ui.data.DownloadStore.items.size
+                val bytes = com.wearsic.next.ui.data.DownloadStore.totalBytes()
+                val playlists = com.wearsic.next.ui.data.PlaylistsStore.playlists.size
+                val mb = if (bytes < 1_000_000) "<1 MB" else String.format("%.1f MB", bytes / 1_000_000.0)
+                val stats = listOf(
+                    "Favorites" to favorites.toString(),
+                    "Recently played" to recents.toString(),
+                    "Saved offline" to "$downloads · $mb",
+                    "Playlists" to playlists.toString(),
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(WearsicDimens.CardRadius))
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .border(1.dp, WearsicSurfaceBorder, RoundedCornerShape(WearsicDimens.CardRadius))
+                        .padding(12.dp)
+                ) {
+                    stats.forEach { (label, value) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = label,
+                                color = Color.White.copy(alpha = 0.65f),
+                                fontSize = 11.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = value,
+                                color = LocalWearsicAccent.current,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                }
+            }
+
             item { SectionTitle("About") }
 
             item {
