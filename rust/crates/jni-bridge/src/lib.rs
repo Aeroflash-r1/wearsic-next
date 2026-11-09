@@ -585,6 +585,94 @@ fn browse_cancel_jni(_env: &JNIEnv, _class: JClass, request_id: jlong) {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 7 — search suggestions JNI surface
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct SuggestRequestJson {
+    query: String,
+    #[serde(default)]
+    request_id: Option<u64>,
+}
+
+fn suggest_execute(request_json: &str) -> String {
+    let Some(service) = ytm_service() else {
+        return serde_json::json!({"ok": false, "error": {
+            "kind": "internal", "status": 0, "message": "network engine not initialised"
+        }}).to_string();
+    };
+
+    let req: SuggestRequestJson = match serde_json::from_str(request_json) {
+        Ok(r) => r,
+        Err(e) => {
+            return serde_json::json!({"ok": false, "error": {
+                "kind": "invalid_response", "status": 0, "message": format!("bad request JSON: {e}")
+            }}).to_string();
+        }
+    };
+
+    let token = CancellationToken::new();
+    let request_id = req.request_id.unwrap_or(0);
+    if request_id != 0 {
+        if let Ok(mut g) = IN_FLIGHT.lock() {
+            g.insert(request_id, token.clone());
+        }
+    }
+
+    let engine = network_engine().unwrap();
+    let service_task = service.clone();
+    let token_task = token.clone();
+    let query = req.query.clone();
+    let task = engine.spawn(async move { service_task.suggestions(&query, &token_task).await });
+
+    let result = engine.block_on(async {
+        tokio::time::timeout(std::time::Duration::from_secs(8), task).await
+    });
+
+    if request_id != 0 {
+        let _ = IN_FLIGHT.lock().map(|mut g| g.remove(&request_id));
+    }
+
+    match result {
+        Ok(Ok(Ok(suggestions))) => serde_json::json!({"ok": true, "suggestions": suggestions}).to_string(),
+        Ok(Ok(Err(message))) => serde_json::json!({
+            "ok": false,
+            "error": { "kind": "internal", "status": 0, "message": message },
+        })
+        .to_string(),
+        Ok(Err(_)) => serde_json::json!({
+            "ok": false,
+            "error": { "kind": "internal", "status": 0, "message": "suggest task panicked" },
+        })
+        .to_string(),
+        Err(_) => serde_json::json!({
+            "ok": false,
+            "error": { "kind": "timeout", "status": 0, "message": "suggest timed out" },
+        })
+        .to_string(),
+    }
+}
+
+fn suggest_jni(mut env: JNIEnv, _class: JClass, request_json: JString) -> jstring {
+    panic_barrier(std::ptr::null_mut(), || {
+        let body: String = env
+            .get_string(&request_json)
+            .map(|s| s.into())
+            .unwrap_or_default();
+        jstring_from(&env, &suggest_execute(&body))
+    })
+}
+
+fn probe_suggest_jni(mut env: JNIEnv, _class: JClass, request_json: JString) -> jstring {
+    suggest_jni(env, _class, request_json)
+}
+
+fn suggest_cancel_jni(_env: &JNIEnv, _class: JClass, request_id: jlong) {
+    panic_barrier((), || network_cancel(request_id as u64));
+}
+
+// ---------------------------------------------------------------------------
 // Phase 5 — stream resolution JNI surface
 // ---------------------------------------------------------------------------
 
@@ -764,6 +852,16 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut std::ffi::c_void) 
             "(J)V",
             browse_cancel_jni as *mut std::ffi::c_void,
         ),
+        m(
+            "nativeSuggest",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            suggest_jni as *mut std::ffi::c_void,
+        ),
+        m(
+            "nativeSuggestCancel",
+            "(J)V",
+            suggest_cancel_jni as *mut std::ffi::c_void,
+        ),
     ];
 
     let engine_probe_methods = [
@@ -825,6 +923,11 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut std::ffi::c_void) 
             "probeBrowseCancel",
             "(J)V",
             browse_cancel_jni as *mut std::ffi::c_void,
+        ),
+        m(
+            "probeSuggest",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            probe_suggest_jni as *mut std::ffi::c_void,
         ),
     ];
 

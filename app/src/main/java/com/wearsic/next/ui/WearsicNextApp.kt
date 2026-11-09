@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -72,6 +73,7 @@ import com.wearsic.next.ui.search.SearchScreen
 import com.wearsic.next.ui.settings.SettingsScreen
 import com.wearsic.next.ui.screens.FavoritesScreen
 import com.wearsic.next.ui.screens.QueueScreen
+import com.wearsic.next.ui.screens.RecommendationsScreen
 import com.wearsic.next.ui.screens.VolumeScreen
 import com.wearsic.next.ui.theme.LocalWearsicAccent
 import com.wearsic.next.ui.theme.WearsicAppBackground
@@ -104,6 +106,7 @@ internal sealed interface Destination {
     data object Queue : Destination
     data object Sound : Destination
     data object Favorites : Destination
+    data object MadeForYou : Destination
     data object Settings : Destination
     data class Browse(
         val browseId: String,
@@ -241,6 +244,11 @@ fun WearsicNextApp(
                     viewModel = playbackViewModel,
                     onBack = { backStack.pop() },
                 )
+                Destination.MadeForYou -> RecommendationsScreen(
+                    playbackViewModel = playbackViewModel,
+                    onOpenPlayer = { backStack.push(Destination.Player) },
+                    onBack = { backStack.pop() },
+                )
                 Destination.Settings -> SettingsScreen(
                     onBack = { backStack.pop() },
                 )
@@ -250,6 +258,7 @@ fun WearsicNextApp(
                     onNowPlaying = { backStack.push(Destination.Player) },
                     onQueue = { backStack.push(Destination.Queue) },
                     onFavorites = { backStack.push(Destination.Favorites) },
+                    onMadeForYou = { backStack.push(Destination.MadeForYou) },
                     onSound = { backStack.push(Destination.Sound) },
                     onSettings = { backStack.push(Destination.Settings) },
                 )
@@ -271,6 +280,7 @@ private fun HomeScreen(
     onNowPlaying: () -> Unit,
     onQueue: () -> Unit,
     onFavorites: () -> Unit,
+    onMadeForYou: () -> Unit,
     onSound: () -> Unit,
     onSettings: () -> Unit,
 ) {
@@ -316,6 +326,16 @@ private fun HomeScreen(
                     label = "Search Music",
                     icon = Icons.Rounded.Search,
                     onClick = onSearch
+                )
+            }
+
+            // Made for you — recommendations from your local taste.
+            item {
+                WearsicSecondaryPillButton(
+                    label = "Made for you",
+                    icon = Icons.Rounded.Star,
+                    onClick = onMadeForYou,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 

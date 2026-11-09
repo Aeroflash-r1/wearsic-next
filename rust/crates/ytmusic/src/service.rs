@@ -10,7 +10,8 @@ use innertube::InnerTubeClient;
 use network::{CancellationToken, HttpClient};
 
 use crate::mapper::{
-    find_continuation, parse_browse_response, parse_search_response, SearchFilter,
+    find_continuation, parse_browse_response, parse_search_response, parse_suggestions,
+    SearchFilter,
 };
 use crate::models::{BrowsePage, SearchPage};
 
@@ -98,6 +99,21 @@ impl YtMusicService {
         let page = SearchPage { results: results.clone(), continuation: continuation.clone() };
         self.cache.put(key, page);
         Ok(SearchPage { results, continuation })
+    }
+
+    /// Fetch search suggestions for `input` (the live rows shown while
+    /// typing). Suggestions are not cached at this layer (cheap calls).
+    pub async fn suggestions(
+        &self,
+        input: &str,
+        token: &CancellationToken,
+    ) -> Result<Vec<String>, String> {
+        let raw = self
+            .innertube
+            .suggestions(input, token)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(parse_suggestions(&raw, 8))
     }
 
     /// Fetches an album, playlist or artist page. One request per visit: the

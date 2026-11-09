@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ScreenScaffold
@@ -82,8 +83,9 @@ import java.util.Locale
 
 /**
  * SEARCH — the standalone search screen in the Wearsic design language:
- * header, interactive search pill, filter chips, shimmer-shaped loading rows
- * and glass track rows with haptics + long-press favourites.
+ * header, interactive search pill, live suggestions while typing,
+ * shimmer-shaped loading rows and glass track rows with haptics +
+ * long-press favourites.
  *
  * Selecting a track plays it immediately (the Rust engine resolves the
  * stream); everything else still debounces as you type.
@@ -97,7 +99,7 @@ fun SearchScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val query by viewModel.query.collectAsState()
-    val filter by viewModel.filter.collectAsState()
+    val suggestions by viewModel.suggestions.collectAsState()
     val playingVideoId = playbackViewModel?.let { vm ->
         val s by vm.state.collectAsState()
         s.item?.videoId
@@ -195,34 +197,38 @@ fun SearchScreen(
                 }
             }
 
-            // Filter chips.
-            item {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SearchFilter.entries.forEach { f ->
-                        val selected = f == filter
-                        val accent = LocalWearsicAccent.current
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(
-                                    when {
-                                        selected -> accent
-                                        else -> WearsicGlassFill
-                                    }
-                                )
-                                .border(1.dp, if (selected) accent else WearsicGlassBorder, CircleShape)
-                                .wearsicClickable(haptic = false) { viewModel.onFilterSelected(f) }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
+            // Live suggestions while typing (hidden while a search is
+            // in flight) — matches the original search screen.
+            if (state !is SearchUiState.Loading && suggestions.isNotEmpty()) {
+                items(suggestions) { suggestion ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = WearsicDimens.TouchTarget)
+                            .clip(CircleShape)
+                            .background(WearsicGlassFill)
+                            .border(1.dp, WearsicGlassBorder, CircleShape)
+                            .wearsicClickable(haptic = false) {
+                                keyboardController?.hide()
+                                viewModel.onQueryChanged(suggestion)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = null,
+                                tint = LocalWearsicAccent.current,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
                             Text(
-                                text = f.label,
-                                color = if (selected) Color(0xFF17161A) else Color.White.copy(alpha = 0.85f),
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                maxLines = 1
+                                text = suggestion,
+                                color = WearsicTextPrimary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -248,7 +254,8 @@ fun SearchScreen(
                     }
                 }
                 is SearchUiState.Results -> {
-                    if (s.results.isEmpty()) {
+                    val visible = s.results
+                    if (visible.isEmpty()) {
                         item {
                             HintLine(
                                 text = "No results for \"${s.query}\"",
@@ -256,43 +263,32 @@ fun SearchScreen(
                             )
                         }
                     } else {
-                        val visible = when (filter) {
-                            SearchFilter.All -> s.results
-                            SearchFilter.Songs -> s.results.filterIsInstance<MusicSearchResult.Track>()
-                            SearchFilter.Artists -> s.results.filterIsInstance<MusicSearchResult.Artist>()
-                            SearchFilter.Albums -> s.results.filterIsInstance<MusicSearchResult.Album>()
-                            SearchFilter.Playlists -> s.results.filterIsInstance<MusicSearchResult.Playlist>()
-                        }
-                        if (visible.isEmpty()) {
-                            item { HintLine("No ${filter.label.lowercase(Locale.US)} in results") }
-                        } else {
-                            items(visible.size) { index ->
-                                val result = visible[index]
-                                SearchResultRow(
-                                    result = result,
-                                    isPlaying = result is MusicSearchResult.Track &&
-                                        result.track.videoId == playingVideoId,
-                                    isFavorite = result is MusicSearchResult.Track &&
-                                        FavoritesStore.isFavorite(result.track.videoId),
-                                    // The whole visible list becomes the queue, so
-                                    // next/previous walk the search results (as in
-                                    // the original Wearsic) instead of stopping
-                                    // after one song.
-                                    onPlay = { onResultSelected(result, visible) },
-                                    onToggleFavorite = {
-                                        (result as? MusicSearchResult.Track)?.let {
-                                            FavoritesStore.toggle(PlaybackItem.fromSearch(it.track))
-                                        }
+                        items(visible.size) { index ->
+                            val result = visible[index]
+                            SearchResultRow(
+                                result = result,
+                                isPlaying = result is MusicSearchResult.Track &&
+                                    result.track.videoId == playingVideoId,
+                                isFavorite = result is MusicSearchResult.Track &&
+                                    FavoritesStore.isFavorite(result.track.videoId),
+                                // The whole visible list becomes the queue, so
+                                // next/previous walk the search results (as in
+                                // the original Wearsic) instead of stopping
+                                // after one song.
+                                onPlay = { onResultSelected(result, visible) },
+                                onToggleFavorite = {
+                                    (result as? MusicSearchResult.Track)?.let {
+                                        FavoritesStore.toggle(PlaybackItem.fromSearch(it.track))
                                     }
-                                )
-                            }
-                            s.continuation?.let {
-                                item(key = "load_more") {
-                                    LoadMoreRow(
-                                        isLoading = s.loadingMore,
-                                        onClick = viewModel::loadMore
-                                    )
                                 }
+                            )
+                        }
+                        s.continuation?.let {
+                            item(key = "load_more") {
+                                LoadMoreRow(
+                                    isLoading = s.loadingMore,
+                                    onClick = viewModel::loadMore
+                                )
                             }
                         }
                     }

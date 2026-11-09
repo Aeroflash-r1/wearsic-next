@@ -65,6 +65,14 @@ pub struct SearchBody {
     pub params: Option<String>,
 }
 
+/// Request body for search suggestions.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestBody {
+    pub context: InnerTubeContext,
+    pub input: String,
+}
+
 /// Request body for a pagination (continuation) call.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +96,8 @@ pub struct BrowseBody {
 /// app / original Wearsic server; no authentication).
 pub const YTM_SEARCH_URL: &str = "https://music.youtube.com/youtubei/v1/search";
 pub const YTM_BROWSE_URL: &str = "https://music.youtube.com/youtubei/v1/browse";
+pub const YTM_SUGGEST_URL: &str =
+    "https://music.youtube.com/youtubei/v1/music/get_search_suggestions";
 pub const YTM_API_KEY: &str = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30";
 
 pub fn search_url() -> String {
@@ -96,4 +106,8 @@ pub fn search_url() -> String {
 
 pub fn browse_url() -> String {
     format!("{YTM_BROWSE_URL}?alt=json&key={YTM_API_KEY}")
+}
+
+pub fn suggest_url() -> String {
+    format!("{YTM_SUGGEST_URL}?alt=json&key={YTM_API_KEY}")
 }

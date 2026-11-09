@@ -91,6 +91,14 @@ class RustEngine private constructor() {
         @JvmStatic
         external fun nativeBrowseCancel(requestId: Long)
 
+        /** Fetches live search suggestions; returns JSON envelope. */
+        @JvmStatic
+        external fun nativeSuggest(requestJson: String): String
+
+        /** Cancels an in-flight suggest request by id. */
+        @JvmStatic
+        external fun nativeSuggestCancel(requestId: Long)
+
         /**
          * Loads + initializes the engine. Throws [EngineException] if the
          * native library is missing or initialization fails.
@@ -168,6 +176,28 @@ class RustEngine private constructor() {
 
     fun searchCancel(requestId: Long) = nativeSearchCancel(requestId)
 
+    // --- Phase 7: search suggestions ---
+
+    /**
+     * Fetches live search suggestions for [query] (the rows shown while
+     * typing). Empty list on any failure — suggestions are a nicety, never
+     * a hard requirement.
+     */
+    fun suggestMusic(query: String, requestId: Long = 0L): List<String> {
+        val raw = nativeSuggest(
+            json.encodeToString(
+                SuggestRequest.serializer(),
+                SuggestRequest(query = query, requestId = requestId.takeIf { it != 0L }),
+            ),
+        )
+        val envelope = runCatching {
+            json.decodeFromString(SuggestEnvelope.serializer(), raw)
+        }.getOrNull()
+        return if (envelope != null && envelope.ok) envelope.suggestions.orEmpty() else emptyList()
+    }
+
+    fun suggestCancel(requestId: Long) = nativeSuggestCancel(requestId)
+
     // --- Phase 6: browse pages (album / playlist / artist) ---
 
     /**
@@ -226,6 +256,19 @@ class RustEngine private constructor() {
         return envelope.stream
     }
 }
+
+@kotlinx.serialization.Serializable
+data class SuggestRequest(
+    val query: String,
+    @SerialName("request_id") val requestId: Long? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class SuggestEnvelope(
+    val ok: Boolean,
+    val suggestions: List<String>? = null,
+    val error: NetworkErrorPublic? = null,
+)
 
 @kotlinx.serialization.Serializable
 data class BrowseRequest(

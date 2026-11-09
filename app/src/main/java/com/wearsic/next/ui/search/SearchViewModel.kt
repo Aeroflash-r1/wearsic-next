@@ -52,23 +52,56 @@ class SearchViewModel(
     private val _state = MutableStateFlow<SearchUiState>(SearchUiState.Idle)
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    /** Live suggestions shown while typing (like the original). */
+    val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
+
     private val requestCounter = AtomicLong(0)
     private var activeSearchJob: Job? = null
+    private var suggestJob: Job? = null
     private var currentRequestId = 0L
 
     /** Real-time input; debounces the actual search. */
     fun onQueryChanged(newQuery: String) {
         _query.value = newQuery
+        // Suggestions: quick, independent of the full search.
+        refreshSuggestions(newQuery)
         // Debounce: only start a search after quiet typing.
         activeSearchJob?.cancel()
         activeSearchJob = viewModelScope.launch {
             delay(DEBOUNCE_MS)
             if (newQuery.isBlank()) {
                 _state.value = SearchUiState.Idle
+                _suggestions.value = emptyList()
             } else {
                 runSearch(newQuery, _filter.value, continuation = null)
             }
         }
+    }
+
+    /** Quick suggest request (fired alongside, never blocks the search). */
+    private fun refreshSuggestions(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.length < 2) {
+            _suggestions.value = emptyList()
+            return
+        }
+        suggestJob?.cancel()
+        suggestJob = viewModelScope.launch {
+            delay(150) // tiny debounce — snappier than the search
+            val result = withContext(Dispatchers.IO) {
+                runCatching { engine.suggestMusic(trimmed, requestCounter.incrementAndGet()) }
+                    .getOrDefault(emptyList())
+            }
+            if (_query.value.trim() == trimmed) {
+                _suggestions.value = result
+            }
+        }
+    }
+
+    fun cancelSuggestions() {
+        suggestJob?.cancel()
+        _suggestions.value = emptyList()
     }
 
     fun onFilterSelected(newFilter: SearchFilter) {

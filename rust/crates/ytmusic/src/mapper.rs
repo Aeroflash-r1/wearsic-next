@@ -490,6 +490,49 @@ pub fn find_continuation(raw: &Value) -> Option<String> {
     find_string_deep(raw, "token").filter(|t| t.len() > 10)
 }
 
+/// Parses a `get_search_suggestions` response into plain query strings.
+/// Rows are `musicResponsiveListItemRenderer` items whose `text.runs`
+/// concatenate into the suggestion. All access is total; junk is skipped.
+pub fn parse_suggestions(raw: &Value, limit: usize) -> Vec<String> {
+    fn collect(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(Value::Array(runs)) = map.get("runs") {
+                    let mut joined = String::new();
+                    for run in runs {
+                        if let Some(t) = get_str(run, "text") {
+                            joined.push_str(t);
+                        }
+                    }
+                    let joined = joined.trim();
+                    if !joined.is_empty() {
+                        out.push(joined.to_string());
+                    }
+                    return;
+                }
+                for v in map.values() {
+                    collect(v, out);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    collect(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut collected = Vec::new();
+    collect(raw, &mut collected);
+    let mut seen = std::collections::HashSet::new();
+    collected
+        .into_iter()
+        .filter(|s| seen.insert(s.clone()))
+        .take(limit)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

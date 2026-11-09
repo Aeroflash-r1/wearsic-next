@@ -6,7 +6,7 @@ pub mod parser;
 
 use network::{CancellationToken, HttpClient, NetworkError, Request};
 
-use context::{BrowseBody, ContinuationBody, SearchBody};
+use context::{BrowseBody, ContinuationBody, SearchBody, SuggestBody};
 
 /// Errors specific to InnerTube interaction. Reuses [`NetworkError`] for
 /// transport-level failures and adds service-level errors.
@@ -121,6 +121,20 @@ impl InnerTubeClient {
             params: params.map(str::to_string),
         };
         self.post_json(&context::search_url(), &body, token).await
+    }
+
+    /// Fetch search suggestions for `input` (the live "did you mean" rows
+    /// shown while typing).
+    pub async fn suggestions(
+        &self,
+        input: &str,
+        token: &CancellationToken,
+    ) -> Result<serde_json::Value, InnerTubeError> {
+        let body = SuggestBody {
+            context: context::InnerTubeContext::web_remix(),
+            input: input.to_string(),
+        };
+        self.post_json(&context::suggest_url(), &body, token).await
     }
 
     /// Fetch a continuation page.
