@@ -67,5 +67,10 @@ class EngineProbe {
 
         @JvmStatic
         external fun probeBrowseCancel(requestId: Long)
+
+        // --- Phase 7 suggest probes ---
+
+        @JvmStatic
+        external fun probeSuggest(requestJson: String): String
     }
 }
