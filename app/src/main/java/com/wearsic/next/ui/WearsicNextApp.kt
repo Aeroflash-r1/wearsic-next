@@ -79,6 +79,7 @@ import com.wearsic.next.ui.screens.DownloadsScreen
 import com.wearsic.next.ui.screens.PlaylistDetailScreen
 import com.wearsic.next.ui.screens.PlaylistsScreen
 import com.wearsic.next.ui.screens.VolumeScreen
+import com.wearsic.next.ui.lyrics.LyricsScreen
 import com.wearsic.next.ui.theme.LocalWearsicAccent
 import com.wearsic.next.ui.theme.WearsicAppBackground
 import com.wearsic.next.ui.theme.WearsicDimens
@@ -115,6 +116,7 @@ internal sealed interface Destination {
     data object Playlists : Destination
     data object PickPlaylist : Destination
     data class PlaylistDetail(val name: String) : Destination
+    data object Lyrics : Destination
     data object Settings : Destination
     data class Browse(
         val browseId: String,
@@ -230,6 +232,7 @@ fun WearsicNextApp(
                     onNavigateToDownloads = { backStack.push(Destination.Downloads) },
                     onDownloadTrack = playbackViewModel::cacheCurrentTrack,
                     onNavigateToPickPlaylist = { backStack.push(Destination.PickPlaylist) },
+                    onNavigateToLyrics = { backStack.push(Destination.Lyrics) },
                     onArtworkColor = { colors ->
                         if (colors.fromArtwork) artworkAccent.value = colors.accent
                     },
@@ -259,6 +262,10 @@ fun WearsicNextApp(
                     onOpenDetail = { },
                     onBack = { backStack.pop() },
                     chooser = true,
+                )
+                Destination.Lyrics -> LyricsScreen(
+                    viewModel = playbackViewModel,
+                    onBack = { backStack.pop() },
                 )
                 is Destination.PlaylistDetail -> PlaylistDetailScreen(
                     playlistName = current.name,

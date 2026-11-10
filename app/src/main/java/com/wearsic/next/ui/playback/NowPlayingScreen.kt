@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.FormatAlignLeft
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Folder
@@ -155,6 +156,7 @@ fun NowPlayingScreen(
     onArtworkColor: (ArtworkColors) -> Unit = {},
     onDownloadTrack: ((onResult: (Boolean) -> Unit) -> Unit)? = null,
     onNavigateToPickPlaylist: () -> Unit = {},
+    onNavigateToLyrics: () -> Unit = {},
 ) {
     val playbackState by viewModel.state.collectAsState()
     val track = playbackState.item
@@ -246,6 +248,7 @@ fun NowPlayingScreen(
                                 onNavigateToVolume = onNavigateToVolume,
                                 onNavigateToDownloads = onNavigateToDownloads,
                                 onAddToPlaylist = onNavigateToPickPlaylist,
+                                onNavigateToLyrics = onNavigateToLyrics,
                                 onCacheTrack = onDownloadTrack
                                     ?: viewModel::cacheCurrentTrack,
                                 active = pageIndex == 1,
@@ -721,6 +724,7 @@ private fun ActionsPage(
     onNavigateToDownloads: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onCacheTrack: (onResult: (Boolean) -> Unit) -> Unit,
+    onNavigateToLyrics: () -> Unit,
     active: Boolean,
     onShuffle: (Boolean) -> Unit,
     onCycleRepeat: () -> Unit,
@@ -815,6 +819,15 @@ private fun ActionsPage(
                 enabled = true,
                 onClick = onNavigateToQueue,
                 testTag = "player_queue_shortcut_button"
+            )
+        }
+        item {
+            ActionRow(
+                icon = Icons.Rounded.FormatAlignLeft,
+                label = "Lyrics",
+                enabled = hasTrack,
+                onClick = onNavigateToLyrics,
+                testTag = "player_lyrics_button"
             )
         }
         item {
