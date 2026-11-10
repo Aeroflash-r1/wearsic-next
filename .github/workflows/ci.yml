@@ -50,16 +50,15 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK components we actually use
-        run: >
-          sdkmanager --install
-          "platforms;android-36.1"
-          "build-tools;36.1.0"
-          "cmake;3.22.1"
-          "ndk;27.2.12479018"
+      - name: Set up Android SDK (runner already has it; just add what is missing)
+        run: |
+          set -e
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install \
+            "platforms;android-36.1" \
+            "build-tools;36.1.0" \
+            "cmake;3.22.1" \
+            "ndk;27.2.12479018"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
