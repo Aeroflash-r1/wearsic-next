@@ -302,7 +302,7 @@ fun NowPlayingScreen(
 // ─────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun NowPlayingPage(
+internal fun NowPlayingPage(
     item: PlaybackItem?,
     state: PlaybackUiState,
     durationMs: Long,
@@ -463,7 +463,7 @@ private fun NowPlayingPage(
 }
 
 @Composable
-private fun SubtitleText(text: String, color: Color, modifier: Modifier) {
+internal fun SubtitleText(text: String, color: Color, modifier: Modifier) {
     Text(
         text = text,
         color = color,
@@ -481,7 +481,7 @@ private fun SubtitleText(text: String, color: Color, modifier: Modifier) {
  * lives in its own composable and recomposes alone.
  */
 @Composable
-private fun PlaybackTimeLabel(positionFlow: StateFlow<Long>, durationMs: Long, color: Color) {
+internal fun PlaybackTimeLabel(positionFlow: StateFlow<Long>, durationMs: Long, color: Color) {
     val position by positionFlow.collectAsState()
     Text(
         text = "${formatTime(position)} / ${formatTime(durationMs)}",
@@ -500,7 +500,7 @@ private fun PlaybackTimeLabel(positionFlow: StateFlow<Long>, durationMs: Long, c
  * animates while you simply listen.
  */
 @Composable
-private fun ArtworkDisc(
+internal fun ArtworkDisc(
     artworkUrl: String?,
     hasTrack: Boolean,
     positionFlow: StateFlow<Long>,
@@ -648,7 +648,7 @@ private fun discRotation(progress: Float): Float = progress.coerceIn(0f, 1f) * 3
  * runs off the main thread, once per artwork.
  */
 @Composable
-private fun ArtworkBackdrop(
+internal fun ArtworkBackdrop(
     artworkUrl: String?,
     glowColor: Color,
     onColors: (ArtworkColors) -> Unit
@@ -715,7 +715,7 @@ private fun ArtworkBackdrop(
 // ─────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ActionsPage(
+internal fun ActionsPage(
     state: PlaybackUiState,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
@@ -852,7 +852,7 @@ private fun ActionsPage(
  * disc, so the play button still carries the weight.
  */
 @Composable
-private fun TransportRow(
+internal fun TransportRow(
     state: PlaybackUiState,
     playSize: Dp,
     onTogglePlayPause: () -> Unit,
@@ -893,7 +893,7 @@ private fun TransportRow(
 }
 
 @Composable
-private fun SkipButton(
+internal fun SkipButton(
     icon: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
@@ -929,7 +929,7 @@ private fun SkipButton(
  * and the disc keeps a hairline ring so it never melts into the backdrop.
  */
 @Composable
-private fun PlayButton(
+internal fun PlayButton(
     state: PlaybackUiState,
     size: Dp,
     onClick: () -> Unit,
@@ -983,7 +983,7 @@ private fun PlayButton(
  * flat glass language as the list rows.
  */
 @Composable
-private fun ActionRow(
+internal fun ActionRow(
     icon: ImageVector,
     label: String,
     enabled: Boolean,

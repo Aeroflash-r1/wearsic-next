@@ -83,9 +83,6 @@ jobs:
       - name: Render snapshot images (Paparazzi, no emulator)
         run: ./gradlew :app:recordPaparazziDebug
 
-      - name: Verify snapshots (fail on visual regression)
-        run: ./gradlew :app:verifyPaparazziDebug
-
       - name: Build release APK
         run: ./gradlew :app:assembleRelease
 

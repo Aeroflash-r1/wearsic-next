@@ -309,6 +309,16 @@ fun WearsicNextApp(
     }
 }
 
+/** Fixture-friendly Home data (used by previews/screenshot tests and tests only). */
+internal data class HomeScreenData(
+    val hasSong: Boolean,
+    val title: String,
+    val artist: String,
+    val artworkUrl: String?,
+    val isPlaying: Boolean,
+    val recent: List<com.wearsic.next.playback.PlaybackItem> = emptyList(),
+)
+
 /**
  * HOME — faithful port of the stable Wearsic LibraryScreen structure:
  * header → now-playing hero (when a track is loaded) → primary Search Music
@@ -316,8 +326,8 @@ fun WearsicNextApp(
  * components from the original.
  */
 @Composable
-private fun HomeScreen(
-    playbackViewModel: PlaybackViewModel,
+internal fun HomeScreenContent(
+    data: HomeScreenData,
     onSearch: () -> Unit,
     onNowPlaying: () -> Unit,
     onQueue: () -> Unit,
@@ -327,11 +337,10 @@ private fun HomeScreen(
     onPlaylists: () -> Unit,
     onDownloads: () -> Unit,
     onSettings: () -> Unit,
+    playRecent: (index: Int) -> Unit,
 ) {
-    val state by playbackViewModel.state.collectAsState()
     val listState = rememberScalingLazyListState()
-    val hasSong = state.item != null && state.phase != PlaybackPhase.Error
-    val recent = RecentStore.items
+    val hasSong = data.hasSong
 
     ScreenScaffold(scrollState = listState) { contentPadding ->
         ScalingLazyColumn(
@@ -355,10 +364,10 @@ private fun HomeScreen(
             if (hasSong) {
                 item {
                     NowPlayingMiniCard(
-                        title = state.item?.title.orEmpty(),
-                        artist = state.item?.artistLabel.orEmpty(),
-                        artworkUrl = state.item?.artworkUrl,
-                        isPlaying = state.isPlaying,
+                        title = data.title,
+                        artist = data.artist,
+                        artworkUrl = data.artworkUrl,
+                        isPlaying = data.isPlaying,
                         onClick = onNowPlaying
                     )
                 }
@@ -435,29 +444,23 @@ private fun HomeScreen(
             }
 
             // Recently Played — one-tap resume, like the original home.
-            if (recent.isNotEmpty()) {
+            if (data.recent.isNotEmpty()) {
                 item {
                     WearsicSectionTitle(label = "Recently Played", trailing = {
                         Text(
-                            text = "${recent.size} songs",
+                            text = "${data.recent.size} songs",
                             color = wearsicSecondaryText(),
                             fontSize = 10.sp
                         )
                     })
                 }
-                recent.take(4).forEach { track ->
+                data.recent.take(4).forEach { track ->
                     item(key = "recent_${track.videoId}") {
                         WearsicSongRow(
                             title = track.title,
                             artist = track.artistLabel.ifBlank { "—" },
                             artworkUrl = track.artworkUrl,
-                            onClick = {
-                                playbackViewModel.playTracks(
-                                    recent,
-                                    recent.indexOfFirst { it.videoId == track.videoId }
-                                )
-                                onNowPlaying()
-                            }
+                            onClick = { playRecent(data.recent.indexOfFirst { it.videoId == track.videoId }) }
                         )
                     }
                 }
@@ -478,6 +481,47 @@ private fun HomeScreen(
             }
         }
     }
+}
+
+@Composable
+private fun HomeScreen(
+    playbackViewModel: PlaybackViewModel,
+    onSearch: () -> Unit,
+    onNowPlaying: () -> Unit,
+    onQueue: () -> Unit,
+    onFavorites: () -> Unit,
+    onMadeForYou: () -> Unit,
+    onSound: () -> Unit,
+    onPlaylists: () -> Unit,
+    onDownloads: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    val state by playbackViewModel.state.collectAsState()
+    val hasSong = state.item != null && state.phase != PlaybackPhase.Error
+    val recent = RecentStore.items
+    HomeScreenContent(
+        data = HomeScreenData(
+            hasSong = hasSong,
+            title = state.item?.title.orEmpty(),
+            artist = state.item?.artistLabel.orEmpty(),
+            artworkUrl = state.item?.artworkUrl,
+            isPlaying = state.isPlaying,
+            recent = recent,
+        ),
+        onSearch = onSearch,
+        onNowPlaying = onNowPlaying,
+        onQueue = onQueue,
+        onFavorites = onFavorites,
+        onMadeForYou = onMadeForYou,
+        onSound = onSound,
+        onPlaylists = onPlaylists,
+        onDownloads = onDownloads,
+        onSettings = onSettings,
+        playRecent = { index ->
+            playbackViewModel.playTracks(recent, index)
+            onNowPlaying()
+        }
+    )
 }
 
 /**

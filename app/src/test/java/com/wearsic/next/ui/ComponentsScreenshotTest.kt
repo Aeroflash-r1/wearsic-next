@@ -33,6 +33,16 @@ import com.wearsic.next.ui.theme.WearsicDimens
 import com.wearsic.next.ui.theme.WearsicTextWhite60
 import com.wearsic.next.ui.theme.WearsicVibrantLavender
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import com.wearsic.next.engine.Thumbnail
+import com.wearsic.next.engine.Artist
+import com.wearsic.next.engine.Album
+import com.wearsic.next.playback.PlaybackItem
+import com.wearsic.next.ui.HomeScreenContent
+import com.wearsic.next.ui.HomeScreenData
+import com.wearsic.next.ui.playback.ArtworkDisc
+import com.wearsic.next.ui.playback.TransportRow
 import org.junit.Rule
 import org.junit.Test
 
@@ -144,4 +154,108 @@ class ComponentsScreenshotTest {
 
     @Test
     fun shimmer() = snapshot("shimmer") { WearsicSearchShimmerRow() }
+
+    @Test
+    fun home_no_hero() = snapshot("home_no_hero") {
+        HomeScreenContent(
+            data = HomeScreenData(
+                hasSong = false, title = "", artist = "", artworkUrl = null,
+                isPlaying = false, recent = fakeRecent(),
+            ),
+            onSearch = {}, onNowPlaying = {}, onQueue = {}, onFavorites = {},
+            onMadeForYou = {}, onSound = {}, onPlaylists = {}, onDownloads = {},
+            onSettings = {}, playRecent = {},
+        )
+    }
+
+    @Test
+    fun home_with_hero() = snapshot("home_with_hero") {
+        HomeScreenContent(
+            data = HomeScreenData(
+                hasSong = true,
+                title = "VXLTA GE — Undress (Rehearsal Hard)",
+                artist = "Kakashi",
+                artworkUrl = null,
+                isPlaying = true,
+                recent = fakeRecent(),
+            ),
+            onSearch = {}, onNowPlaying = {}, onQueue = {}, onFavorites = {},
+            onMadeForYou = {}, onSound = {}, onPlaylists = {}, onDownloads = {},
+            onSettings = {}, playRecent = {},
+        )
+    }
+
+    @Test
+    fun player_disc_playing() = snapshot("player_disc_playing") {
+        ArtworkDisc(
+            artworkUrl = null,
+            hasTrack = true,
+            positionFlow = kotlinx.coroutines.flow.MutableStateFlow(32_000L),
+            durationMs = 106_000L,
+            playing = true,
+            colors = com.wearsic.next.ui.util.ArtworkColors.Default,
+            size = 56.dp,
+            rotateArtwork = false,
+        )
+    }
+
+    @Test
+    fun player_disc_compact_40mm() = snapshot("player_disc_compact_40mm") {
+        ArtworkDisc(
+            artworkUrl = null,
+            hasTrack = true,
+            positionFlow = kotlinx.coroutines.flow.MutableStateFlow(83_000L),
+            durationMs = 106_000L,
+            playing = true,
+            colors = com.wearsic.next.ui.util.ArtworkColors.Default,
+            size = 52.dp,
+            rotateArtwork = false,
+        )
+    }
+
+    @Test
+    fun player_transport_playing() = snapshot("player_transport_playing") {
+        TransportRow(
+            state = com.wearsic.next.playback.PlaybackUiState(
+                phase = com.wearsic.next.playback.PlaybackPhase.Playing,
+                isPlaying = true,
+                item = fakeItem(),
+                durationMs = 106_000L,
+                hasPrev = true,
+                hasNext = true,
+            ),
+            playSize = 48.dp,
+            onTogglePlayPause = {},
+            onSkipPrevious = {},
+            onSkipNext = {},
+            colors = com.wearsic.next.ui.util.ArtworkColors.Default,
+            enabled = true,
+        )
+    }
+
+    private fun fakeRecent(): List<PlaybackItem> = listOf(
+        PlaybackItem(
+            videoId = "vid_yellow",
+            title = "Yellow",
+            artists = listOf(Artist(name = "Coldplay", id = "a_coldplay")),
+            thumbnails = listOf(Thumbnail(url = "https://example.com/yellow.jpg")),
+            durationMs = 269_000L,
+        ),
+        PlaybackItem(
+            videoId = "vid_parachute",
+            title = "Parachutes",
+            artists = listOf(Artist(name = "Coldplay", id = "a_coldplay")),
+            thumbnails = listOf(Thumbnail(url = "https://example.com/parachutes.jpg")),
+            durationMs = 210_000L,
+        ),
+        PlaybackItem(
+            videoId = "vid_vxlt",
+            title = "VXLTA GE — Undress (Rehearsal Hard)",
+            artists = listOf(Artist(name = "Kakashi", id = "a_kakashi")),
+            thumbnails = emptyList(),
+            durationMs = 106_000L,
+        ),
+    )
+
+    private fun fakeItem(): PlaybackItem = fakeRecent().first()
 }

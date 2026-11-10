@@ -21,3 +21,6 @@ rust/target/
 *.jks
 *.keystore
 keystore.properties
+
+# Kotlin build cache
+.kotlin/
