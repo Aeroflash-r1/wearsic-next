@@ -291,6 +291,9 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.wear.compose.ui.tooling)
+    // Declares androidx.activity.ComponentActivity in the DEBUG manifest so
+    // Robolectric (Roborazzi gallery) can host the compose test rule.
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
