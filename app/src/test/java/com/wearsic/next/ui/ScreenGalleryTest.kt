@@ -50,9 +50,11 @@ import com.wearsic.next.ui.search.SearchUiState
 import com.wearsic.next.ui.search.SearchFilter
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.Assume.assumeTrue
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -68,6 +70,18 @@ import org.robolectric.annotation.GraphicsMode
 class ScreenGalleryTest {
 
     @get:Rule val composeTestRule = createComposeRule()
+
+    @Before
+    fun requireNativeGraphicsHost() {
+        // Robolectric's NATIVE renderer ships x86_64 host binaries only; on
+        // other architectures (e.g. an aarch64 dev box) the gallery is
+        // rendered by CI instead of failing the local test run.
+        assumeTrue(
+            "Roborazzi NATIVE graphics requires an x86_64 host",
+            System.getProperty("os.arch").contains("64") &&
+                !System.getProperty("os.arch").startsWith("aarch64"),
+        )
+    }
 
     private fun shoot(name: String, content: @Composable () -> Unit) {
         composeTestRule.setContent {
