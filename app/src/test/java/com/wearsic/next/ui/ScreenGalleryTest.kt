@@ -258,9 +258,12 @@ class ScreenGalleryTest {
 
     @Test
     fun section_title() = shoot("13-section-title") {
-        WearsicSectionTitle(label = "Recently Played") {
-            Text(text = "6", color = WearsicTextWhite60, fontSize = 10.sp)
-        }
+        WearsicSectionTitle(
+            label = "Recently Played",
+            trailing = {
+                Text(text = "6", color = WearsicTextWhite60, fontSize = 10.sp)
+            },
+        )
     }
 
     @Test

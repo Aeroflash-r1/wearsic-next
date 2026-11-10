@@ -7,18 +7,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
- * The Wearsic dimension system — ported from the original, tuned for the 44mm
- * round Galaxy Watch 7 display (480px @ 340dpi ≈ 226dp circular viewport —
- * confirmed live on the device).
+ * The Wearsic dimension system — tuned for round Wear OS faces and derived
+ * from the LIVE viewport so one codebase fits 40mm, 44mm and 46mm watches.
  *
- * Every screen shares one safe-area language:
- *   outer edge → ScreenPadding → content → ScreenPadding → outer edge
+ * Two ideas do the work:
  *
- * Values are deliberately conservative: on a round display the usable width
- * shrinks toward the top and bottom of the circle.
+ *  1. [WatchProfile] classifies the face (Compact / Standard / Large) from the
+ *     real logical size. Every type size, row height and artwork size is then
+ *     read from the profile instead of being hardcoded, so a 40mm watch gets
+ *     smaller content and a 46mm watch gets larger content — automatically,
+ *     with no second layout.
+ *
+ *  2. [rememberWatchScale] provides a continuous multiplier for the cases
+ *     where a smooth ratio is better than three buckets (padding, gaps).
+ *
+ * Round-screen safe area: the usable width of a circle SHRINKS toward the top
+ * and bottom, so full-width rows must be inset. The design padding below is
+ * merged with the scaffold insets (never smaller than either, never doubled).
  */
 object WearsicDimens {
 
@@ -47,7 +57,7 @@ object WearsicDimens {
     /** Radius for square artwork thumbnails (hero chip, list rows). */
     val ArtRadius: Dp = 12.dp
 
-    // ---- Content sizes ----
+    // ---- Content sizes (scaled per profile) ----
     /** Song-row / list thumbnail (also the Coil request size baseline). */
     val RowThumbnail: Dp = 40.dp
 
@@ -67,6 +77,82 @@ object WearsicDimens {
 
     /** Anything larger than the baseline is left alone. */
     const val MaxWatchScale = 1f
+}
+
+/**
+ * Face class derived from the real logical viewport.
+ *
+ *  · Compact  — 40mm-class (≈192–200dp): everything tight, type one step down
+ *  · Standard — 44mm-class (≈220–232dp): the reference layout
+ *  · Large    — 46mm-class (≥240dp): a touch more air
+ */
+enum class WatchProfile(
+    /** Multiplier applied to every metric in the profile. */
+    val metricScale: Float,
+    /** Title size for the screen header. */
+    val headerTitle: TextUnit,
+    /** Title size for a song row. */
+    val rowTitle: TextUnit,
+    /** Artist line size for a song row. */
+    val rowArtist: TextUnit,
+    /** Artwork size for a song row. */
+    val rowArtwork: Dp,
+    /** Height of the big accent pill. */
+    val pillHeight: Dp,
+    /** Height of a secondary glass pill. */
+    val secondaryPillHeight: Dp,
+    /** Diameter of the player artwork disc. */
+    val playerDisc: Dp,
+    /** Diameter of the player play button. */
+    val playerPlay: Dp,
+) {
+    Compact(
+        metricScale = 0.88f,
+        headerTitle = 21.sp,
+        rowTitle = 13.sp,
+        rowArtist = 11.sp,
+        rowArtwork = 36.dp,
+        pillHeight = 48.dp,
+        secondaryPillHeight = 44.dp,
+        playerDisc = 52.dp,
+        playerPlay = 46.dp,
+    ),
+    Standard(
+        metricScale = 1f,
+        headerTitle = 24.sp,
+        rowTitle = 14.sp,
+        rowArtist = 12.sp,
+        rowArtwork = 40.dp,
+        pillHeight = 52.dp,
+        secondaryPillHeight = 48.dp,
+        playerDisc = 60.dp,
+        playerPlay = 50.dp,
+    ),
+    Large(
+        metricScale = 1.06f,
+        headerTitle = 26.sp,
+        rowTitle = 15.sp,
+        rowArtist = 13.sp,
+        rowArtwork = 44.dp,
+        pillHeight = 56.dp,
+        secondaryPillHeight = 52.dp,
+        playerDisc = 66.dp,
+        playerPlay = 54.dp,
+    ),
+}
+
+/** The face profile for THIS screen — recomputed on configuration change. */
+@Composable
+fun rememberWatchProfile(): WatchProfile {
+    val config = LocalConfiguration.current
+    val widthDp = config.screenWidthDp
+    val heightDp = config.screenHeightDp
+    val smallest = minOf(widthDp, heightDp)
+    return when {
+        smallest < 210 -> WatchProfile.Compact
+        smallest < 240 -> WatchProfile.Standard
+        else -> WatchProfile.Large
+    }
 }
 
 /**

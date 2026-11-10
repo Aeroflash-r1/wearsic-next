@@ -71,6 +71,7 @@ import com.wearsic.next.ui.theme.WearsicTextPrimaryDark
 import com.wearsic.next.ui.theme.WearsicTextWhite60
 import com.wearsic.next.ui.theme.WearsicTextWhite80
 import com.wearsic.next.ui.theme.wearsicAccentContainer
+import com.wearsic.next.ui.theme.rememberWatchProfile
 import com.wearsic.next.ui.theme.watchScaled
 import com.wearsic.next.ui.util.WearsicMotion
 import com.wearsic.next.ui.util.wearsicClickable
@@ -100,6 +101,7 @@ fun WearsicScreenHeader(
     accentColor: Color? = null
 ) {
     val accent = accentColor ?: LocalWearsicAccent.current
+    val profile = rememberWatchProfile()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -117,7 +119,7 @@ fun WearsicScreenHeader(
         Text(
             text = title,
             color = WearsicTextPrimary,
-            fontSize = 24.sp,
+            fontSize = profile.headerTitle,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             letterSpacing = (-0.4).sp,
@@ -194,6 +196,7 @@ fun WearsicPrimaryPillButton(
     iconBgColor: Color = Color(0x1A000000)
 ) {
     val haptic = LocalHapticFeedback.current
+    val profile = rememberWatchProfile()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -205,7 +208,7 @@ fun WearsicPrimaryPillButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .heightIn(min = profile.pillHeight)
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -291,6 +294,7 @@ fun WearsicSecondaryPillButton(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val profile = rememberWatchProfile()
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -301,7 +305,7 @@ fun WearsicSecondaryPillButton(
 
     Box(
         modifier = modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = profile.secondaryPillHeight)
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -454,6 +458,7 @@ fun WearsicSongRow(
     onLongClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {}
 ) {
+    val profile = rememberWatchProfile()
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -472,14 +477,18 @@ fun WearsicSongRow(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                WearsicSongRowArtwork(artworkUrl = artworkUrl, contentDescription = title)
+                WearsicSongRowArtwork(
+                    artworkUrl = artworkUrl,
+                    contentDescription = title,
+                    size = profile.rowArtwork,
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
                         text = title,
                         color = titleColor,
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
+                        fontSize = profile.rowTitle,
+                        lineHeight = profile.rowTitle * 1.28f,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = titleMaxLines,
                         overflow = TextOverflow.Ellipsis
@@ -488,8 +497,8 @@ fun WearsicSongRow(
                     Text(
                         text = artist,
                         color = artistColor,
-                        fontSize = 12.sp,
-                        lineHeight = 15.sp,
+                        fontSize = profile.rowArtist,
+                        lineHeight = profile.rowArtist * 1.25f,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

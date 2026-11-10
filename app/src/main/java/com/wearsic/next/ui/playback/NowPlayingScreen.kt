@@ -115,6 +115,7 @@ import com.wearsic.next.ui.theme.WearsicError
 import com.wearsic.next.ui.theme.WearsicPrefs
 import com.wearsic.next.ui.theme.WearsicSurfaceBorder
 import com.wearsic.next.ui.theme.WearsicTextMuted
+import com.wearsic.next.ui.theme.rememberWatchProfile
 import com.wearsic.next.ui.theme.watchScaled
 import com.wearsic.next.ui.theme.wearsicListContentPadding
 import com.wearsic.next.ui.util.ArtworkColors
@@ -133,10 +134,10 @@ import com.wearsic.next.ui.util.wearsicRotaryScroll
  *     and time sit in the readable mid-band below it, and the compact
  *     transport hugs the lower third. Nothing important is placed in the
  *     clipped top or the curved bottom edge.
- *   · Everything is measured from the space actually available
- *     ([BoxWithConstraints]) and switches to a compact scale on short
- *     viewports, so the composition can never clip or push a control
- *     off-face. (The 44mm Galaxy Watch 7 reports ~226dp — it runs compact.)
+ *   · Everything is sized from the WATCH PROFILE (Compact 40mm /
+ *     Standard 44mm / Large 46mm), derived from the real viewport, so the
+ *     composition adapts to the watch instead of assuming one size and can
+ *     never clip or push a control off-face.
  *   · The backdrop is the artwork itself, darkened with a fixed scrim plus a
  *     cheap radial tint — no blur shaders.
  *   · Playback progress is a ring AROUND the disc, drawn in the draw phase
@@ -316,15 +317,12 @@ internal fun NowPlayingPage(
     rotateArtwork: Boolean,
 ) {
     val hasTrack = item != null
+    // The face profile (Compact 40mm / Standard 44mm / Large 46mm) decides
+    // every size — the layout adapts to the watch instead of assuming one.
+    val profile = rememberWatchProfile()
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val compact = maxHeight < 236.dp
-        // Slightly smaller discs on the tight 44mm face so that the fixed
-        // stack can never clip on the curved edge.
-        val discSize: Dp = (maxWidth * 0.34f).coerceIn(
-            if (compact) 52.dp else 64.dp,
-            if (compact) 64.dp else 80.dp
-        )
-        val playSize: Dp = if (compact) 48.dp else (maxWidth * 0.26f).coerceIn(50.dp, 60.dp)
+        val discSize: Dp = profile.playerDisc
+        val playSize: Dp = profile.playerPlay
 
         Column(
             modifier = Modifier
@@ -376,15 +374,15 @@ internal fun NowPlayingPage(
                 )
             }
 
-            Spacer(modifier = Modifier.height(if (compact) 4.dp else 8.dp))
+            Spacer(modifier = Modifier.height(WearsicDimens.SpacingS))
 
             // Single line, always: the full name slides sideways instead of
             // wrapping (a wrap pushed the artist line into the curved edge).
             WearsicMarqueeText(
                 text = item?.title ?: "Nothing playing",
                 color = if (state.phase == PlaybackPhase.Error) WearsicError else Color.White,
-                fontSize = if (compact) 13.sp else 15.sp,
-                lineHeight = if (compact) 15.sp else 18.sp,
+                fontSize = profile.rowTitle,
+                lineHeight = profile.rowTitle * 1.28f,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = (-0.2).sp,
                 modifier = Modifier
@@ -457,7 +455,7 @@ internal fun NowPlayingPage(
                 enabled = hasTrack
             )
 
-            Spacer(modifier = Modifier.height(if (compact) 10.dp else 12.dp))
+            Spacer(modifier = Modifier.height(WearsicDimens.SpacingL))
         }
     }
 }
