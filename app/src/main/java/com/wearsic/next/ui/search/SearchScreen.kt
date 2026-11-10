@@ -49,9 +49,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ScreenScaffold
@@ -81,15 +82,6 @@ import com.wearsic.next.ui.util.wearsicEntrance
 import com.wearsic.next.ui.util.wearsicRotaryScroll
 import java.util.Locale
 
-/**
- * SEARCH — the standalone search screen in the Wearsic design language:
- * header, interactive search pill, live suggestions while typing,
- * shimmer-shaped loading rows and glass track rows with haptics +
- * long-press favourites.
- *
- * Selecting a track plays it immediately (the Rust engine resolves the
- * stream); everything else still debounces as you type.
- */
 @Composable
 fun SearchScreen(
     onResultSelected: (MusicSearchResult, List<MusicSearchResult>) -> Unit,
@@ -104,6 +96,40 @@ fun SearchScreen(
         val s by vm.state.collectAsState()
         s.item?.videoId
     }
+    SearchScreenContent(
+        onResultSelected = onResultSelected,
+        state = state,
+        query = query,
+        suggestions = suggestions,
+        playingVideoId = playingVideoId,
+        onQueryChanged = viewModel::onQueryChanged,
+        onRetry = viewModel::retry,
+        onLoadMore = viewModel::loadMore,
+    )
+}
+
+/**
+ * SEARCH — the standalone search screen in the Wearsic design language:
+ * header, interactive search pill, live suggestions while typing,
+ * shimmer-shaped loading rows and glass track rows with haptics +
+ * long-press favourites.
+ *
+ * Selecting a track plays it immediately (the Rust engine resolves the
+ * stream); everything else still debounces as you type.
+ */
+@Composable
+internal fun SearchScreenContent(
+    onResultSelected: (MusicSearchResult, List<MusicSearchResult>) -> Unit,
+    state: SearchUiState,
+    query: String,
+    suggestions: List<String>,
+    playingVideoId: String?,
+    onQueryChanged: (String) -> Unit,
+    onRetry: () -> Unit,
+    onLoadMore: () -> Unit,
+    onResultClick: (MusicSearchResult) -> Unit = { /* wired by caller */ },
+    onToggleFavorite: (MusicSearchResult.Track) -> Unit = {},
+) {
     val listState = rememberScalingLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -159,7 +185,7 @@ fun SearchScreen(
                             }
                             BasicTextField(
                                 value = query,
-                                onValueChange = viewModel::onQueryChanged,
+                                onValueChange = onQueryChanged,
                                 singleLine = true,
                                 textStyle = TextStyle(
                                     color = Color.White,
@@ -171,7 +197,7 @@ fun SearchScreen(
                                 keyboardActions = KeyboardActions(
                                     onSearch = {
                                         keyboardController?.hide()
-                                        viewModel.retry()
+                                        onRetry()
                                     },
                                     onDone = { keyboardController?.hide() },
                                     onGo = { keyboardController?.hide() }
@@ -189,7 +215,7 @@ fun SearchScreen(
                                 tint = WearsicTextMuted,
                                 modifier = Modifier
                                     .size(30.dp)
-                                    .wearsicClickable(haptic = false) { viewModel.onQueryChanged("") }
+                                    .wearsicClickable(haptic = false) { onQueryChanged("") }
                                     .padding(6.dp)
                             )
                         }
@@ -210,7 +236,7 @@ fun SearchScreen(
                             .border(1.dp, WearsicGlassBorder, CircleShape)
                             .wearsicClickable(haptic = false) {
                                 keyboardController?.hide()
-                                viewModel.onQueryChanged(suggestion)
+                                onQueryChanged(suggestion)
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         contentAlignment = Alignment.CenterStart
@@ -249,7 +275,7 @@ fun SearchScreen(
                         HintLine(
                             text = "Search failed — ${s.message}",
                             isError = true,
-                            retry = viewModel::retry
+                            retry = onRetry
                         )
                     }
                 }
@@ -287,7 +313,7 @@ fun SearchScreen(
                             item(key = "load_more") {
                                 LoadMoreRow(
                                     isLoading = s.loadingMore,
-                                    onClick = viewModel::loadMore
+                                    onClick = onLoadMore
                                 )
                             }
                         }

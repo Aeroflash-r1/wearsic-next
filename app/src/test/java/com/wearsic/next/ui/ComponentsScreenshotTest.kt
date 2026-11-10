@@ -43,6 +43,9 @@ import com.wearsic.next.ui.HomeScreenContent
 import com.wearsic.next.ui.HomeScreenData
 import com.wearsic.next.ui.playback.ArtworkDisc
 import com.wearsic.next.ui.playback.TransportRow
+import com.wearsic.next.ui.search.SearchScreenContent
+import com.wearsic.next.ui.search.SearchUiState
+import com.wearsic.next.ui.search.SearchFilter
 import org.junit.Rule
 import org.junit.Test
 
@@ -165,6 +168,63 @@ class ComponentsScreenshotTest {
             onSearch = {}, onNowPlaying = {}, onQueue = {}, onFavorites = {},
             onMadeForYou = {}, onSound = {}, onPlaylists = {}, onDownloads = {},
             onSettings = {}, playRecent = {},
+        )
+    }
+
+    @Test
+    fun search_idle_with_suggestions() = snapshot("search_idle_with_suggestions") {
+        SearchScreenContent(
+            onResultSelected = { _, _ -> },
+            state = com.wearsic.next.ui.search.SearchUiState.Idle,
+            query = "cold",
+            suggestions = listOf("coldplay", "coldplay yellow", "coldplay paradise"),
+            playingVideoId = null,
+            onQueryChanged = {},
+            onRetry = {},
+            onLoadMore = {},
+        )
+    }
+
+    @Test
+    fun search_shows_loading() = snapshot("search_shows_loading") {
+        SearchScreenContent(
+            onResultSelected = { _, _ -> },
+            state = com.wearsic.next.ui.search.SearchUiState.Loading(
+                query = "coldplay",
+                filter = com.wearsic.next.ui.search.SearchFilter.All,
+            ),
+            query = "coldplay",
+            suggestions = emptyList(),
+            playingVideoId = null,
+            onQueryChanged = {},
+            onRetry = {},
+            onLoadMore = {},
+        )
+    }
+
+    @Test
+    fun search_results_tracklist() = snapshot("search_results_tracklist") {
+        val track = com.wearsic.next.engine.TrackDto(
+            videoId = "vid_yellow",
+            title = "Yellow",
+            artists = listOf(Artist(name = "Coldplay", id = "a_coldplay")),
+            thumbnails = listOf(Thumbnail(url = "https://example.com/yellow.jpg")),
+            durationMs = 269_000L,
+        )
+        SearchScreenContent(
+            onResultSelected = { _, _ -> },
+            state = com.wearsic.next.ui.search.SearchUiState.Results(
+                query = "coldplay",
+                filter = com.wearsic.next.ui.search.SearchFilter.All,
+                results = listOf(com.wearsic.next.engine.MusicSearchResult.Track(track)),
+                continuation = "token_123",
+            ),
+            query = "coldplay",
+            suggestions = emptyList(),
+            playingVideoId = "vid_yellow",
+            onQueryChanged = {},
+            onRetry = {},
+            onLoadMore = {},
         )
     }
 
