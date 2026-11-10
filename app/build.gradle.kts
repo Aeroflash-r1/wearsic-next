@@ -218,6 +218,15 @@ android {
         }
     }
 
+    // Robolectric (Roborazzi screen gallery) needs the merged resources and
+    // assets to render the real app UI in a JVM test.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
+
     experimentalProperties["android.experimental.artProfile"] = "off"
 
     compileOptions {
