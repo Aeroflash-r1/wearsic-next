@@ -28,6 +28,8 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -74,6 +76,7 @@ import com.wearsic.next.ui.playback.NowPlayingScreen
 import com.wearsic.next.ui.search.SearchScreen
 import com.wearsic.next.ui.settings.SettingsScreen
 import com.wearsic.next.ui.screens.FavoritesScreen
+import com.wearsic.next.ui.screens.LibraryScreen
 import com.wearsic.next.ui.screens.QueueScreen
 import com.wearsic.next.ui.screens.RecommendationsScreen
 import com.wearsic.next.ui.screens.DownloadsScreen
@@ -113,6 +116,7 @@ internal sealed interface Destination {
     data object Sound : Destination
     data object Favorites : Destination
     data object MadeForYou : Destination
+    data class Library(val kind: com.wearsic.next.ui.screens.LibraryKind) : Destination
     data object Downloads : Destination
     data object Playlists : Destination
     data object PickPlaylist : Destination
@@ -285,6 +289,12 @@ fun WearsicNextApp(
                     viewModel = playbackViewModel,
                     onBack = { backStack.pop() },
                 )
+                is Destination.Library -> LibraryScreen(
+                    kind = current.kind,
+                    viewModel = playbackViewModel,
+                    onOpenPlayer = { backStack.push(Destination.Player) },
+                    onBack = { backStack.pop() },
+                )
                 Destination.MadeForYou -> RecommendationsScreen(
                     playbackViewModel = playbackViewModel,
                     onOpenPlayer = { backStack.push(Destination.Player) },
@@ -303,6 +313,8 @@ fun WearsicNextApp(
                     onSound = { backStack.push(Destination.Sound) },
                     onPlaylists = { backStack.push(Destination.Playlists) },
                     onDownloads = { backStack.push(Destination.Downloads) },
+                    onAlbums = { backStack.push(Destination.Library(com.wearsic.next.ui.screens.LibraryKind.Albums)) },
+                    onArtists = { backStack.push(Destination.Library(com.wearsic.next.ui.screens.LibraryKind.Artists)) },
                     onSettings = { backStack.push(Destination.Settings) },
                 )
             }
@@ -337,6 +349,8 @@ internal fun HomeScreenContent(
     onSound: () -> Unit,
     onPlaylists: () -> Unit,
     onDownloads: () -> Unit,
+    onAlbums: () -> Unit = {},
+    onArtists: () -> Unit = {},
     onSettings: () -> Unit,
     playRecent: (index: Int) -> Unit,
 ) {
@@ -421,6 +435,22 @@ internal fun HomeScreenContent(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            item {
+                WearsicSecondaryPillButton(
+                    label = "Albums",
+                    icon = Icons.Rounded.Album,
+                    onClick = onAlbums,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            item {
+                WearsicSecondaryPillButton(
+                    label = "Artists",
+                    icon = Icons.Rounded.Person,
+                    onClick = onArtists,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
 
             item {
                 WearsicSecondaryPillButton(
@@ -490,6 +520,8 @@ private fun HomeScreen(
     onSound: () -> Unit,
     onPlaylists: () -> Unit,
     onDownloads: () -> Unit,
+    onAlbums: () -> Unit,
+    onArtists: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val state by playbackViewModel.state.collectAsState()
@@ -512,6 +544,8 @@ private fun HomeScreen(
         onSound = onSound,
         onPlaylists = onPlaylists,
         onDownloads = onDownloads,
+        onAlbums = onAlbums,
+        onArtists = onArtists,
         onSettings = onSettings,
         playRecent = { index ->
             playbackViewModel.playTracks(recent, index)

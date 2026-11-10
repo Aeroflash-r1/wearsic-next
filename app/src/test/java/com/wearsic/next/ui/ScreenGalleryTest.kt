@@ -86,8 +86,8 @@ class ScreenGalleryTest {
         // rendered by CI instead of failing the local test run.
         assumeTrue(
             "Roborazzi NATIVE graphics requires an x86_64 host",
-            System.getProperty("os.arch").contains("64") &&
-                !System.getProperty("os.arch").startsWith("aarch64"),
+            (System.getProperty("os.arch") ?: "").contains("64") &&
+                !(System.getProperty("os.arch") ?: "").startsWith("aarch64"),
         )
     }
 
