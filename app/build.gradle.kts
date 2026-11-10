@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.cash.paparazzi)
+    alias(libs.plugins.roborazzi)
 }
 
 // ---------------------------------------------------------------------------
@@ -286,36 +286,13 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
     testImplementation(libs.androidx.test.junit)
-    testImplementation(libs.paparazzi)
 }
 
 tasks.named("preBuild") {
     dependsOn(buildRustEngine)
-}
-
-// ---------------------------------------------------------------------------
-// Paparazzi snapshot tests and the Rust JNI smoke tests cannot share a JVM
-// (cashapp/paparazzi#1979). Categories keep them apart:
-//   ./gradlew :app:testDebugUnitTest      → excludes paparazzi (default)
-//   ./gradlew :app:recordPaparazziDebug   → only paparazzi
-//   ./gradlew :app:verifyPaparazziDebug   → only paparazzi
-// ---------------------------------------------------------------------------
-
-val paparazziCategoryName = "com.wearsic.next.ui.PaparazziTest"
-
-val paparazziRequested = gradle.startParameter.taskNames.any { name ->
-    name.contains("paparazzi", ignoreCase = true)
-}
-
-tasks.withType<Test>().configureEach {
-    if (name == "testDebugUnitTest") {
-        filter {
-            if (paparazziRequested) {
-                includeTestsMatching("com.wearsic.next.ui.ComponentsScreenshotTest")
-            } else {
-                excludeTestsMatching("com.wearsic.next.ui.ComponentsScreenshotTest")
-            }
-        }
-    }
 }

@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21 (required by Gradle/Paparazzi)
+      - name: Set up JDK 21 (required by Gradle/Roborazzi)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -64,6 +64,13 @@ jobs:
             "cmake;3.22.1" \
             "ndk;27.2.12479018"
 
+      - name: Reclaim space
+        run: |
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/lib-hubs
+          df -h /
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -80,8 +87,8 @@ jobs:
       - name: Unit tests (Rust JNI smoke tests + contract tests)
         run: ./gradlew :app:testDebugUnitTest
 
-      - name: Render snapshot images (Paparazzi, no emulator)
-        run: ./gradlew :app:recordPaparazziDebug
+      - name: Render full screen gallery (Robolectric + Roborazzi record)
+        run: ./gradlew :app:testDebugUnitTest --tests "com.wearsic.next.ui.ScreenGalleryTest" -Proborazzi.test.record=true --stacktrace
 
       - name: Build release APK
         run: ./gradlew :app:assembleRelease
@@ -91,7 +98,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: app/src/test/snapshots/**/*.png
+          path: app/src/test/screenshots/**/*.png
           if-no-files-found: warn
 
       - name: Upload release APK
