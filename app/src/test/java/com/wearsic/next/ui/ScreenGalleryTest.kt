@@ -34,6 +34,7 @@ import com.wearsic.next.ui.components.WearsicSecondaryPillButton
 import com.wearsic.next.ui.components.WearsicSettingsActionPill
 import com.wearsic.next.ui.components.WearsicSongRow
 import com.wearsic.next.ui.playback.ArtworkDisc
+import com.wearsic.next.ui.playback.NowPlayingPage
 import com.wearsic.next.ui.playback.TransportRow
 import com.wearsic.next.ui.theme.LocalWearsicAccent
 import com.wearsic.next.ui.theme.WearsicBlack
@@ -68,6 +69,13 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = RobolectricDeviceQualifiers.WearOSLargeRound, sdk = [36])
 class ScreenGalleryTest {
+
+    /** No-op haptics for the render harness (no vibration in a JVM test). */
+    private object NoHaptic : androidx.compose.ui.hapticfeedback.HapticFeedback {
+        override fun performHapticFeedback(
+            hapticFeedbackType: androidx.compose.ui.hapticfeedback.HapticFeedbackType
+        ) = Unit
+    }
 
     @get:Rule val composeTestRule = createComposeRule()
 
@@ -162,6 +170,30 @@ class ScreenGalleryTest {
             playing = true,
             colors = com.wearsic.next.ui.util.ArtworkColors.Default,
             size = 56.dp,
+            rotateArtwork = false,
+        )
+    }
+
+    @Test
+    fun player_full_screen() = shoot("03b-player-full-screen") {
+        NowPlayingPage(
+            item = currentTrack,
+            state = PlaybackUiState(
+                phase = PlaybackPhase.Playing,
+                isPlaying = true,
+                item = currentTrack,
+                durationMs = 267_000L,
+                hasPrev = true,
+                hasNext = true,
+            ),
+            durationMs = 267_000L,
+            positionFlow = MutableStateFlow(84_000L),
+            onTogglePlayPause = {},
+            onSkipPrevious = {},
+            onSkipNext = {},
+            onSeekTo = {},
+            haptic = NoHaptic,
+            colors = com.wearsic.next.ui.util.ArtworkColors.Default,
             rotateArtwork = false,
         )
     }
