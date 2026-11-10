@@ -115,6 +115,10 @@ val buildRustEngineArm64 by tasks.registering(Exec::class) {
         )
     } else {
         // CI/x86_64 host: stock NDK clang (binaries run natively).
+        environment(
+            "RUSTFLAGS",
+            "-C linker=${File(androidNdkDir, "aarch64-linux-android26-clang").absolutePath}",
+        )
         environment("CC_aarch64_linux_android", pickArm64Clang())
         environment("AR_aarch64_linux_android", pickAr())
     }
