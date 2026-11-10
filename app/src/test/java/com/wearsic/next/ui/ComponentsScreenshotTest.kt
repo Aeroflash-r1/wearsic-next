@@ -4,6 +4,7 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
@@ -71,6 +72,7 @@ class ComponentsScreenshotTest {
                     ScreenScaffold {
                         Column(
                             modifier = Modifier
+                                .fillMaxSize()
                                 .background(WearsicBlack)
                                 .padding(horizontal = WearsicDimens.ScreenPaddingH),
                         ) {
