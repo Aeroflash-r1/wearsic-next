@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -392,25 +393,24 @@ internal fun HomeScreenContent(
                 )
             }
 
-            // Secondary actions: Queue + Sound side by side.
+            // Secondary actions — full-width pills: two side by side on a
+            // 226dp round face truncates the labels ("Que…"), which reads
+            // broken. The original stacks its secondary pills too.
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    WearsicSecondaryPillButton(
-                        label = "Queue",
-                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        onClick = onQueue,
-                        modifier = Modifier.weight(1f)
-                    )
-                    WearsicSecondaryPillButton(
-                        label = "Sound",
-                        icon = Icons.Rounded.GraphicEq,
-                        onClick = onSound,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                WearsicSecondaryPillButton(
+                    label = "Queue",
+                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                    onClick = onQueue,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            item {
+                WearsicSecondaryPillButton(
+                    label = "Sound",
+                    icon = Icons.Rounded.GraphicEq,
+                    onClick = onSound,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             item {
@@ -422,25 +422,21 @@ internal fun HomeScreenContent(
                 )
             }
 
-            // Playlists + Saved offline side by side.
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    WearsicSecondaryPillButton(
-                        label = "Playlists",
-                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        onClick = onPlaylists,
-                        modifier = Modifier.weight(1f)
-                    )
-                    WearsicSecondaryPillButton(
-                        label = "Saved offline",
-                        icon = Icons.Rounded.CloudDownload,
-                        onClick = onDownloads,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                WearsicSecondaryPillButton(
+                    label = "Playlists",
+                    icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                    onClick = onPlaylists,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            item {
+                WearsicSecondaryPillButton(
+                    label = "Saved offline",
+                    icon = Icons.Rounded.CloudDownload,
+                    onClick = onDownloads,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             // Recently Played — one-tap resume, like the original home.

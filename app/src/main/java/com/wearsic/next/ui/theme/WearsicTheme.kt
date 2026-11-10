@@ -123,15 +123,16 @@ object WearsicPrefs {
         if (prefs != null) return
         prefs = context.getSharedPreferences("wearsic_next_prefs", Context.MODE_PRIVATE)
             .also { p ->
-                // v2 (0.2.4+): reset any earlier accent pick back to the
-                // signature lavender so the app opens looking exactly like
-                // the original (users had selected darker accents and the
-                // whole UI read "off").
+                // v3 (0.3.2+): the accent is ALWAYS the signature lavender
+                // on first launch. The artwork tint ("Auto") stays available
+                // in Settings, but the app must OPEN looking exactly like
+                // the original instead of inheriting whatever tint was
+                // active before.
                 val version = p.getInt(KEY_VERSION, 0)
-                if (version < 2) {
+                if (version < 3) {
                     accentName = "Lavender"
                     p.edit()
-                        .putInt(KEY_VERSION, 2)
+                        .putInt(KEY_VERSION, 3)
                         .putString(KEY_ACCENT, "Lavender")
                         .apply()
                 } else {
