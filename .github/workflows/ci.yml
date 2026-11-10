@@ -1,0 +1,103 @@
+name: Wearsic CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  TERM: dumb
+
+jobs:
+  rust-tests:
+    name: Rust engine — cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (required by Gradle/Paparazzi)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: cargo test (host)
+        working-directory: rust
+        run: cargo test --workspace
+
+  android:
+    name: Android — build, test, render
+    runs-on: ubuntu-latest
+    needs: rust-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK components we actually use
+        run: >
+          sdkmanager --install
+          "platforms;android-36.1"
+          "build-tools;36.1.0"
+          "cmake;3.22.1"
+          "ndk;27.2.12479018"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Rust engines (CI-native NDK clang)
+        run: ./gradlew :app:buildRustEngine
+
+      - name: Kotlin compile
+        run: ./gradlew :app:compileReleaseKotlin
+
+      - name: Unit tests (Rust JNI smoke tests + contract tests)
+        run: ./gradlew :app:testDebugUnitTest
+
+      - name: Render snapshot images (Paparazzi, no emulator)
+        run: ./gradlew :app:recordPaparazziDebug
+
+      - name: Verify snapshots (fail on visual regression)
+        run: ./gradlew :app:verifyPaparazziDebug
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease
+
+      - name: Upload rendered screens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: app/src/test/snapshots/**/*.png
+          if-no-files-found: warn
+
+      - name: Upload release APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: ignore

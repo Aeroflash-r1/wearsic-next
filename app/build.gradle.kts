@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.cash.paparazzi)
 }
 
 // ---------------------------------------------------------------------------
@@ -28,15 +29,34 @@ val sdkDir: File = run {
 }
 
 val rustCargoPath = System.getProperty("user.home") + "/.cargo/bin"
-val rustLldPath = File(
-    System.getProperty("user.home"),
-    ".rustup/toolchains/stable-aarch64-unknown-linux-gnu/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld",
-).absolutePath
-val ndkSysrootPath = File(
-    sdkDir,
-    "ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot",
-).absolutePath
-val unwindLibsPath = File(System.getProperty("user.home"), ".wearsic-link-libs").absolutePath
+val androidNdkDir = File(sdkDir, "ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin")
+
+/** Prefer Termux's clang on this dev box; fall back to the NDK's stock clang otherwise. */
+fun pickClang(): String {
+    val termux = File("/data/data/com.termux/files/usr/bin/clang")
+    return if (termux.exists()) {
+        "${termux.absolutePath} --target=armv7a-linux-androideabi26 -march=armv7-a"
+    } else {
+        File(androidNdkDir, "armv7a-linux-androideabi26-clang").absolutePath
+    }
+}
+
+/** Prefer Termux's ar on this dev box; fall back to the NDK's ar otherwise. */
+fun pickAr(): String {
+    val termuxAr = File("/data/data/com.termux/files/usr/bin/llvm-ar")
+    return if (termuxAr.exists()) {
+        termuxAr.absolutePath
+    } else {
+        File(androidNdkDir, "llvm-ar").absolutePath
+    }
+}
+
+/** CI mode: build with the NDK stock clang instead of the host-specific rust-lld. */
+fun pickArm64Clang(): String {
+    val hostClang = File(androidNdkDir, "aarch64-linux-android26-clang")
+    require(hostClang.exists()) { "NDK clang missing at ${hostClang.absolutePath}" }
+    return hostClang.absolutePath
+}
 
 // ---------------------------------------------------------------------------
 // Release signing (credentials are never committed)
@@ -67,17 +87,36 @@ val hasReleaseSigning =
     keystoreFile != null && keystorePassword != null &&
         keystoreAlias != null && keystoreKeyPassword != null
 
+val isAarch64Termux = System.getProperty("os.arch").lowercase() == "aarch64" &&
+    File("/data/data/com.termux/files/usr/bin/clang").exists()
+
+val rustLldPath = File(
+    System.getProperty("user.home"),
+    ".rustup/toolchains/stable-aarch64-unknown-linux-gnu/lib/rustlib/aarch64-unknown-linux-gnu/bin/rust-lld",
+).absolutePath
+val ndkSysrootPath = File(
+    sdkDir,
+    "ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot",
+).absolutePath
+val unwindLibsPath = File(System.getProperty("user.home"), ".wearsic-link-libs").absolutePath
+
 val buildRustEngineArm64 by tasks.registering(Exec::class) {
     group = "build"
     workingDir(rustDir)
     environment("PATH", System.getenv("PATH") + ":" + rustCargoPath)
-    environment(
-        "RUSTFLAGS",
-        "-C linker=$rustLldPath " +
-            "-C link-arg=--sysroot=$ndkSysrootPath " +
-            "-C link-arg=-L$ndkSysrootPath/usr/lib/aarch64-linux-android/26 " +
-            "-C link-arg=-L$unwindLibsPath",
-    )
+    if (isAarch64Termux) {
+        // Dev box (aarch64 Linux): link with host's rust-lld against the NDK sysroot.
+        environment(
+            "RUSTFLAGS",
+            "-C linker=$rustLldPath " +
+                "-C link-arg=--sysroot=$ndkSysrootPath " +
+                "-C link-arg=-L$ndkSysrootPath/usr/lib/aarch64-linux-android/26 " +
+                "-C link-arg=-L$unwindLibsPath",
+        )
+    } else {
+        // CI/x86_64 host: stock NDK clang (binaries run natively).
+        environment("CC_aarch64_linux_android", pickArm64Clang())
+    }
     commandLine("cargo", "build", "--target", "aarch64-linux-android", "--release")
 }
 
@@ -87,19 +126,24 @@ val buildRustEngineArmv7 by tasks.registering(Exec::class) {
     environment("PATH", System.getenv("PATH") + ":" + rustCargoPath)
     environment(
         "CC_armv7_linux_androideabi",
-        "/data/data/com.termux/files/usr/bin/clang --target=armv7a-linux-androideabi26 -march=armv7-a",
+        pickClang(),
     )
-    environment("AR_armv7_linux_androideabi", "/data/data/com.termux/files/usr/bin/llvm-ar")
+    environment("AR_armv7_linux_androideabi", pickAr())
     environment(
         "CFLAGS_armv7_linux_androideabi",
         "-march=armv7-a -D__ANDROID_API__=26 -D__ANDROID_MIN_SDK_VERSION__=26",
     )
     environment(
         "RUSTFLAGS",
-        "-C linker=$rustLldPath " +
-            "-C link-arg=--sysroot=$ndkSysrootPath " +
-            "-C link-arg=-L$ndkSysrootPath/usr/lib/arm-linux-androideabi/26 " +
-            "-C link-arg=-L$unwindLibsPath",
+        if (isAarch64Termux) {
+            // Dev box (aarch64 Linux): link with host's rust-lld against the NDK sysroot.
+            "-C linker=$rustLldPath " +
+                "-C link-arg=--sysroot=$ndkSysrootPath " +
+                "-C link-arg=-L$ndkSysrootPath/usr/lib/arm-linux-androideabi/26 " +
+                "-C link-arg=-L$unwindLibsPath"
+        } else {
+            "-C linker=${File(androidNdkDir, "armv7a-linux-androideabi26-clang").absolutePath}"
+        },
     )
     commandLine("cargo", "build", "--target", "armv7-linux-androideabi", "--release")
 }
@@ -238,8 +282,35 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
+    testImplementation(libs.paparazzi)
 }
 
 tasks.named("preBuild") {
     dependsOn(buildRustEngine)
+}
+
+// ---------------------------------------------------------------------------
+// Paparazzi snapshot tests and the Rust JNI smoke tests cannot share a JVM
+// (cashapp/paparazzi#1979). Categories keep them apart:
+//   ./gradlew :app:testDebugUnitTest      → excludes paparazzi (default)
+//   ./gradlew :app:recordPaparazziDebug   → only paparazzi
+//   ./gradlew :app:verifyPaparazziDebug   → only paparazzi
+// ---------------------------------------------------------------------------
+
+val paparazziCategoryName = "com.wearsic.next.ui.PaparazziTest"
+
+val paparazziRequested = gradle.startParameter.taskNames.any { name ->
+    name.contains("paparazzi", ignoreCase = true)
+}
+
+tasks.withType<Test>().configureEach {
+    if (name == "testDebugUnitTest") {
+        filter {
+            if (paparazziRequested) {
+                includeTestsMatching("com.wearsic.next.ui.ComponentsScreenshotTest")
+            } else {
+                excludeTestsMatching("com.wearsic.next.ui.ComponentsScreenshotTest")
+            }
+        }
+    }
 }
