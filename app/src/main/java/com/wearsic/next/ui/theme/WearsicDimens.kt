@@ -114,8 +114,8 @@ enum class WatchProfile(
         rowArtwork = 36.dp,
         pillHeight = 48.dp,
         secondaryPillHeight = 44.dp,
-        playerDisc = 52.dp,
-        playerPlay = 46.dp,
+        playerDisc = 58.dp,
+        playerPlay = 48.dp,
     ),
     Standard(
         metricScale = 1f,
@@ -125,8 +125,8 @@ enum class WatchProfile(
         rowArtwork = 40.dp,
         pillHeight = 52.dp,
         secondaryPillHeight = 48.dp,
-        playerDisc = 60.dp,
-        playerPlay = 50.dp,
+        playerDisc = 68.dp,
+        playerPlay = 54.dp,
     ),
     Large(
         metricScale = 1.06f,
